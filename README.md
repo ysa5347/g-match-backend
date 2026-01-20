@@ -3,7 +3,7 @@
 ## 🛠 Tech Stack & Versions
 
 ### Core
-- **Python**: `3.12`
+- **Python**: `3.13.9`
 
 ### Backend Framework
 - **Django**: `5.2.10`
