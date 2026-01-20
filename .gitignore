@@ -13,6 +13,8 @@ media/
 # Environments
 env.bak/
 venv.bak/
+.venv/
+*.cfg/
 
 # IDEs
 .idea/

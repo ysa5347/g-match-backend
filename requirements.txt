@@ -1,6 +1,10 @@
+asgiref==3.11.0
 Django==5.2.10
-djangorestframework==3.16.1
-markdown==3.10
-mysqlclient==2.2.1
-redis==5.0.1
 django-environ==0.11.2
+djangorestframework==3.16.1
+dotenv==0.9.9
+Markdown==3.10
+mysqlclient==2.2.1
+python-dotenv==1.2.1
+redis==5.0.1
+sqlparse==0.5.5
