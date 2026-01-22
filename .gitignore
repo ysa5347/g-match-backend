@@ -23,6 +23,9 @@ venv.bak/
 *.swp
 *.swo
 
+# Database
+*/migrations/
+
 # macOS
 .DS_Store
 
@@ -31,3 +34,5 @@ staticfiles/
 
 claude
 migrations
+CLAUDE/
+API_list.csv

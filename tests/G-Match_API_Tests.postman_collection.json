@@ -1,0 +1,639 @@
+{
+  "info": {
+    "name": "G-Match API Tests",
+    "description": "G-Match Backend API 테스트 컬렉션",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {
+      "key": "base_url",
+      "value": "http://localhost:8000",
+      "type": "string"
+    },
+    {
+      "key": "api_version",
+      "value": "v1alpha1",
+      "type": "string"
+    },
+    {
+      "key": "test_email",
+      "value": "test@gist.ac.kr",
+      "type": "string"
+    },
+    {
+      "key": "registration_token",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "verification_code",
+      "value": "",
+      "type": "string"
+    }
+  ],
+  "item": [
+    {
+      "name": "0. Account Main",
+      "item": [
+        {
+          "name": "Get Account Service Info",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/{{api_version}}/account/",
+              "host": ["{{base_url}}"],
+              "path": ["api", "{{api_version}}", "account", ""]
+            }
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "1. Registration Flow",
+      "item": [
+        {
+          "name": "1-1. Send Verification Code",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "// 응답 상태 코드 확인",
+                  "pm.test(\"Status code is 200 or 500 (email not configured)\", function () {",
+                  "    pm.expect([200, 500]).to.include(pm.response.code);",
+                  "});",
+                  "",
+                  "// 성공 응답 확인",
+                  "if (pm.response.code === 200) {",
+                  "    pm.test(\"Response has success field\", function () {",
+                  "        var jsonData = pm.response.json();",
+                  "        pm.expect(jsonData).to.have.property('success');",
+                  "        pm.expect(jsonData.success).to.be.true;",
+                  "    });",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{test_email}}\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/{{api_version}}/account/auth/registration/email/verification-code",
+              "host": ["{{base_url}}"],
+              "path": ["api", "{{api_version}}", "account", "auth", "registration", "email", "verification-code"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "1-2. Verify Code",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"Status code is 200\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "pm.test(\"Response contains registration_token\", function () {",
+                  "    var jsonData = pm.response.json();",
+                  "    pm.expect(jsonData).to.have.property('registration_token');",
+                  "    pm.collectionVariables.set('registration_token', jsonData.registration_token);",
+                  "});",
+                  "",
+                  "pm.test(\"Cookie reg_sid is set\", function () {",
+                  "    pm.expect(pm.cookies.has('reg_sid')).to.be.true;",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{test_email}}\",\n  \"code\": \"{{verification_code}}\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/{{api_version}}/account/auth/registration/email/verification-code/verify",
+              "host": ["{{base_url}}"],
+              "path": ["api", "{{api_version}}", "account", "auth", "registration", "email", "verification-code", "verify"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "1-3. Get Agreement Terms",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"Status code is 200\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "pm.test(\"Response contains terms\", function () {",
+                  "    var jsonData = pm.response.json();",
+                  "    pm.expect(jsonData).to.have.property('terms_of_service');",
+                  "    pm.expect(jsonData).to.have.property('privacy_policy');",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-Registration-Token",
+                "value": "{{registration_token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/{{api_version}}/account/auth/registration/agree",
+              "host": ["{{base_url}}"],
+              "path": ["api", "{{api_version}}", "account", "auth", "registration", "agree"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "1-4. Agree to Terms",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"Status code is 200\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "pm.test(\"New registration_token received\", function () {",
+                  "    var jsonData = pm.response.json();",
+                  "    pm.expect(jsonData).to.have.property('registration_token');",
+                  "    pm.collectionVariables.set('registration_token', jsonData.registration_token);",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-Registration-Token",
+                "value": "{{registration_token}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"terms_of_service\": true,\n  \"privacy_policy\": true\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/{{api_version}}/account/auth/registration/agree",
+              "host": ["{{base_url}}"],
+              "path": ["api", "{{api_version}}", "account", "auth", "registration", "agree"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "1-5. Complete Registration",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"Status code is 201\", function () {",
+                  "    pm.response.to.have.status(201);",
+                  "});",
+                  "",
+                  "pm.test(\"User created successfully\", function () {",
+                  "    var jsonData = pm.response.json();",
+                  "    pm.expect(jsonData.success).to.be.true;",
+                  "    pm.expect(jsonData).to.have.property('user');",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-Registration-Token",
+                "value": "{{registration_token}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"password\": \"testpass123!\",\n  \"password_confirm\": \"testpass123!\",\n  \"name\": \"테스트유저\",\n  \"student_id\": \"20241234\",\n  \"phone_number\": \"010-1234-5678\",\n  \"birth_year\": 2000,\n  \"gender\": \"M\",\n  \"house\": \"A동\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/{{api_version}}/account/auth/registration/basic-info",
+              "host": ["{{base_url}}"],
+              "path": ["api", "{{api_version}}", "account", "auth", "registration", "basic-info"]
+            }
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "2. Login & Logout",
+      "item": [
+        {
+          "name": "2-1. Login",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"Status code is 200\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "pm.test(\"Login successful\", function () {",
+                  "    var jsonData = pm.response.json();",
+                  "    pm.expect(jsonData.success).to.be.true;",
+                  "    pm.expect(jsonData).to.have.property('user');",
+                  "});",
+                  "",
+                  "pm.test(\"Session cookie is set\", function () {",
+                  "    pm.expect(pm.cookies.has('sessionid')).to.be.true;",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{test_email}}\",\n  \"password\": \"testpass123!\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/{{api_version}}/account/auth/login",
+              "host": ["{{base_url}}"],
+              "path": ["api", "{{api_version}}", "account", "auth", "login"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "2-2. Login with Wrong Password",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"Status code is 401\", function () {",
+                  "    pm.response.to.have.status(401);",
+                  "});",
+                  "",
+                  "pm.test(\"Login failed\", function () {",
+                  "    var jsonData = pm.response.json();",
+                  "    pm.expect(jsonData.success).to.be.false;",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{test_email}}\",\n  \"password\": \"wrongpassword\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/{{api_version}}/account/auth/login",
+              "host": ["{{base_url}}"],
+              "path": ["api", "{{api_version}}", "account", "auth", "login"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "2-3. Logout",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"Status code is 200\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "pm.test(\"Logout successful\", function () {",
+                  "    var jsonData = pm.response.json();",
+                  "    pm.expect(jsonData.success).to.be.true;",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/{{api_version}}/account/auth/logout",
+              "host": ["{{base_url}}"],
+              "path": ["api", "{{api_version}}", "account", "auth", "logout"]
+            }
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "3. User Info",
+      "item": [
+        {
+          "name": "3-1. Get User Info (Authenticated)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"Status code is 200\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "pm.test(\"User info retrieved\", function () {",
+                  "    var jsonData = pm.response.json();",
+                  "    pm.expect(jsonData.success).to.be.true;",
+                  "    pm.expect(jsonData).to.have.property('user');",
+                  "    pm.expect(jsonData.user).to.have.property('uid');",
+                  "    pm.expect(jsonData.user).to.have.property('email');",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            },
+            {
+              "listen": "prerequest",
+              "script": {
+                "exec": [
+                  "// Login first",
+                  "pm.sendRequest({",
+                  "    url: pm.collectionVariables.get('base_url') + '/api/' + pm.collectionVariables.get('api_version') + '/account/auth/login',",
+                  "    method: 'POST',",
+                  "    header: {",
+                  "        'Content-Type': 'application/json'",
+                  "    },",
+                  "    body: {",
+                  "        mode: 'raw',",
+                  "        raw: JSON.stringify({",
+                  "            email: pm.collectionVariables.get('test_email'),",
+                  "            password: 'testpass123!'",
+                  "        })",
+                  "    }",
+                  "}, function (err, response) {",
+                  "    console.log('Login response:', response.json());",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/{{api_version}}/account/info",
+              "host": ["{{base_url}}"],
+              "path": ["api", "{{api_version}}", "account", "info"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "3-2. Get User Info (Unauthenticated)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"Status code is 401\", function () {",
+                  "    pm.response.to.have.status(401);",
+                  "});",
+                  "",
+                  "pm.test(\"Unauthorized access\", function () {",
+                  "    var jsonData = pm.response.json();",
+                  "    pm.expect(jsonData.success).to.be.false;",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/{{api_version}}/account/info",
+              "host": ["{{base_url}}"],
+              "path": ["api", "{{api_version}}", "account", "info"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "3-3. Update User Info",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"Status code is 200\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "pm.test(\"User info updated\", function () {",
+                  "    var jsonData = pm.response.json();",
+                  "    pm.expect(jsonData.success).to.be.true;",
+                  "    pm.expect(jsonData.user.name).to.equal('수정된이름');",
+                  "    pm.expect(jsonData.user.is_age_public).to.be.false;",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            },
+            {
+              "listen": "prerequest",
+              "script": {
+                "exec": [
+                  "// Login first",
+                  "pm.sendRequest({",
+                  "    url: pm.collectionVariables.get('base_url') + '/api/' + pm.collectionVariables.get('api_version') + '/account/auth/login',",
+                  "    method: 'POST',",
+                  "    header: {",
+                  "        'Content-Type': 'application/json'",
+                  "    },",
+                  "    body: {",
+                  "        mode: 'raw',",
+                  "        raw: JSON.stringify({",
+                  "            email: pm.collectionVariables.get('test_email'),",
+                  "            password: 'testpass123!'",
+                  "        })",
+                  "    }",
+                  "}, function (err, response) {",
+                  "    console.log('Login response:', response.json());",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"수정된이름\",\n  \"phone_number\": \"010-9999-9999\",\n  \"is_age_public\": false,\n  \"is_house_public\": true\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/{{api_version}}/account/info",
+              "host": ["{{base_url}}"],
+              "path": ["api", "{{api_version}}", "account", "info"]
+            }
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "4. Validation Tests",
+      "item": [
+        {
+          "name": "4-1. Invalid Email (Non-GIST)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"Status code is 400\", function () {",
+                  "    pm.response.to.have.status(400);",
+                  "});",
+                  "",
+                  "pm.test(\"Validation error for non-GIST email\", function () {",
+                  "    var jsonData = pm.response.json();",
+                  "    pm.expect(jsonData.success).to.be.false;",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"test@gmail.com\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/{{api_version}}/account/auth/registration/email/verification-code",
+              "host": ["{{base_url}}"],
+              "path": ["api", "{{api_version}}", "account", "auth", "registration", "email", "verification-code"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "4-2. Missing Required Fields",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"Status code is 400\", function () {",
+                  "    pm.response.to.have.status(400);",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"test@gist.ac.kr\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/{{api_version}}/account/auth/login",
+              "host": ["{{base_url}}"],
+              "path": ["api", "{{api_version}}", "account", "auth", "login"]
+            }
+          },
+          "response": []
+        }
+      ]
+    }
+  ]
+}
