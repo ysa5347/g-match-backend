@@ -28,3 +28,6 @@ venv.bak/
 
 # Static
 staticfiles/
+
+CLAUDE/
+API_list.csv

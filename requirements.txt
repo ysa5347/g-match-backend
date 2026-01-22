@@ -2,6 +2,8 @@ asgiref==3.11.0
 Django==5.2.10
 django-environ==0.11.2
 djangorestframework==3.16.1
+django-cors-headers==4.6.0
+django-redis==5.4.0
 dotenv==0.9.9
 Markdown==3.10
 mysqlclient==2.2.1
