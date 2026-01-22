@@ -110,10 +110,10 @@ class EmailVerificationSerializer(serializers.Serializer):
 class CodeVerificationSerializer(serializers.Serializer):
     """인증코드 검증용 Serializer"""
     email = serializers.EmailField(required=True)
-    code = serializers.CharField(max_length=6, min_length=6, required=True)
+    code = serializers.CharField(max_length=8, min_length=8, required=True)
 
     def validate_code(self, value):
-        """숫자 6자리 확인"""
+        """숫자 8자리 확인"""
         if not value.isdigit():
-            raise serializers.ValidationError('인증코드는 6자리 숫자입니다.')
+            raise serializers.ValidationError('인증코드는 8자리 숫자입니다.')
         return value

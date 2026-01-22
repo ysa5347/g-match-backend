@@ -16,3 +16,7 @@ PyYAML==6.0.3
 redis==5.0.1
 sqlparse==0.5.5
 uritemplate==4.2.0
+
+# AWS SES Email Backend
+django-ses==4.3.0
+boto3==1.35.96

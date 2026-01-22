@@ -66,7 +66,7 @@ def store_verification_code(email, code, reg_sid):
 
     Args:
         email: 이메일 주소
-        code: 인증코드 (6자리)
+        code: 인증코드 (8자리)
         reg_sid: 회원가입 세션 ID
     """
     key = f"verification_code:{reg_sid}:{email}"
@@ -210,5 +210,5 @@ def reset_login_attempts(email):
 
 
 def generate_verification_code():
-    """6자리 숫자 인증코드 생성"""
-    return ''.join(secrets.choice(string.digits) for _ in range(6))
+    """8자리 숫자 인증코드 생성"""
+    return ''.join(secrets.choice(string.digits) for _ in range(8))
