@@ -4,6 +4,8 @@ from django.views.decorators.csrf import csrf_exempt
 from rest_framework.decorators import api_view
 from rest_framework.response import Response
 from rest_framework import status
+from drf_yasg.utils import swagger_auto_schema
+from drf_yasg import openapi
 
 from .models import CustomUser, Agreement
 from .serializers import (
@@ -37,6 +39,20 @@ from .decorators import login_required, registration_step_required
 # 회원가입 API
 # ============================================
 
+@swagger_auto_schema(
+    method='post',
+    operation_summary='이메일 인증코드 발송',
+    operation_description='GIST 이메일로 인증코드를 발송합니다. 약관 동의 후 사용 가능합니다.',
+    request_body=EmailVerificationSerializer,
+    manual_parameters=[
+        openapi.Parameter('X-Registration-Token', openapi.IN_HEADER, description='회원가입 토큰', type=openapi.TYPE_STRING, required=True),
+    ],
+    responses={
+        200: openapi.Response('인증코드 발송 성공'),
+        400: openapi.Response('잘못된 요청'),
+        429: openapi.Response('발송 제한 초과')
+    }
+)
 @api_view(['POST'])
 @registration_step_required('agreed')
 def send_verification_code_view(request):
@@ -84,6 +100,19 @@ def send_verification_code_view(request):
         }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
+@swagger_auto_schema(
+    method='post',
+    operation_summary='이메일 인증코드 검증',
+    operation_description='발송된 인증코드를 검증합니다.',
+    request_body=CodeVerificationSerializer,
+    manual_parameters=[
+        openapi.Parameter('X-Registration-Token', openapi.IN_HEADER, description='회원가입 토큰', type=openapi.TYPE_STRING, required=True),
+    ],
+    responses={
+        200: openapi.Response('인증코드 검증 성공'),
+        400: openapi.Response('유효하지 않은 인증코드')
+    }
+)
 @api_view(['POST'])
 @registration_step_required('agreed')
 def verify_code_view(request):
@@ -136,6 +165,29 @@ def verify_code_view(request):
         }, status=status.HTTP_400_BAD_REQUEST)
 
 
+@swagger_auto_schema(
+    method='get',
+    operation_summary='약관 내용 조회',
+    operation_description='서비스 이용약관 및 개인정보 처리방침 내용을 조회합니다.',
+    responses={200: openapi.Response('약관 내용 조회 성공')}
+)
+@swagger_auto_schema(
+    method='post',
+    operation_summary='약관 동의',
+    operation_description='서비스 이용약관 및 개인정보 처리방침에 동의하고 회원가입을 시작합니다.',
+    request_body=AgreementSerializer,
+    responses={
+        200: openapi.Response('약관 동의 성공', openapi.Schema(
+            type=openapi.TYPE_OBJECT,
+            properties={
+                'success': openapi.Schema(type=openapi.TYPE_BOOLEAN),
+                'message': openapi.Schema(type=openapi.TYPE_STRING),
+                'registration_token': openapi.Schema(type=openapi.TYPE_STRING)
+            }
+        )),
+        400: openapi.Response('잘못된 요청')
+    }
+)
 @api_view(['GET', 'POST'])
 def registration_agree_view(request):
     """
@@ -197,6 +249,19 @@ def registration_agree_view(request):
         return response
 
 
+@swagger_auto_schema(
+    method='post',
+    operation_summary='기본정보 등록 및 회원가입 완료',
+    operation_description='사용자 기본정보를 등록하고 회원가입을 완료합니다.',
+    request_body=UserRegistrationSerializer,
+    manual_parameters=[
+        openapi.Parameter('X-Registration-Token', openapi.IN_HEADER, description='회원가입 토큰', type=openapi.TYPE_STRING, required=True),
+    ],
+    responses={
+        201: openapi.Response('회원가입 성공'),
+        400: openapi.Response('잘못된 요청')
+    }
+)
 @api_view(['POST'])
 @registration_step_required('email_verified')
 def registration_basic_info_view(request):
@@ -259,6 +324,23 @@ def registration_basic_info_view(request):
 # 로그인/로그아웃 API
 # ============================================
 
+@swagger_auto_schema(
+    method='get',
+    operation_summary='로그인 페이지',
+    operation_description='로그인 페이지 정보를 반환합니다.',
+    responses={200: openapi.Response('로그인 페이지')}
+)
+@swagger_auto_schema(
+    method='post',
+    operation_summary='로그인',
+    operation_description='이메일과 비밀번호로 로그인합니다.',
+    request_body=UserLoginSerializer,
+    responses={
+        200: openapi.Response('로그인 성공'),
+        401: openapi.Response('인증 실패'),
+        429: openapi.Response('로그인 시도 횟수 초과')
+    }
+)
 @api_view(['GET', 'POST'])
 def login_view(request):
     """
@@ -333,6 +415,15 @@ def login_view(request):
             }, status=status.HTTP_401_UNAUTHORIZED)
 
 
+@swagger_auto_schema(
+    method='post',
+    operation_summary='로그아웃',
+    operation_description='현재 세션을 종료하고 로그아웃합니다.',
+    responses={
+        200: openapi.Response('로그아웃 성공'),
+        401: openapi.Response('로그인 필요')
+    }
+)
 @api_view(['POST'])
 @login_required
 def logout_view(request):
@@ -352,6 +443,37 @@ def logout_view(request):
 # 사용자 정보 API
 # ============================================
 
+@swagger_auto_schema(
+    method='get',
+    operation_summary='사용자 정보 조회',
+    operation_description='현재 로그인한 사용자의 정보를 조회합니다.',
+    responses={
+        200: openapi.Response('사용자 정보 조회 성공', UserInfoSerializer),
+        401: openapi.Response('로그인 필요')
+    }
+)
+@swagger_auto_schema(
+    method='post',
+    operation_summary='사용자 정보 수정',
+    operation_description='현재 로그인한 사용자의 정보를 수정합니다.',
+    request_body=UserUpdateSerializer,
+    responses={
+        200: openapi.Response('사용자 정보 수정 성공'),
+        400: openapi.Response('잘못된 요청'),
+        401: openapi.Response('로그인 필요')
+    }
+)
+@swagger_auto_schema(
+    method='put',
+    operation_summary='사용자 정보 수정',
+    operation_description='현재 로그인한 사용자의 정보를 수정합니다.',
+    request_body=UserUpdateSerializer,
+    responses={
+        200: openapi.Response('사용자 정보 수정 성공'),
+        400: openapi.Response('잘못된 요청'),
+        401: openapi.Response('로그인 필요')
+    }
+)
 @api_view(['GET', 'POST', 'PUT'])
 @login_required
 def user_info_view(request):
@@ -391,6 +513,12 @@ def user_info_view(request):
 # Entry Points
 # ============================================
 
+@swagger_auto_schema(
+    method='get',
+    operation_summary='Account 서비스 메인',
+    operation_description='Account 서비스의 엔드포인트 목록을 반환합니다.',
+    responses={200: openapi.Response('엔드포인트 목록')}
+)
 @api_view(['GET'])
 def account_main(request):
     """
@@ -409,6 +537,12 @@ def account_main(request):
     }, status=status.HTTP_200_OK)
 
 
+@swagger_auto_schema(
+    method='get',
+    operation_summary='Auth 서비스 메인',
+    operation_description='Auth 서비스의 엔드포인트 목록을 반환합니다.',
+    responses={200: openapi.Response('엔드포인트 목록')}
+)
 @api_view(['GET'])
 def auth_main(request):
     """
@@ -427,6 +561,12 @@ def auth_main(request):
     }, status=status.HTTP_200_OK)
 
 
+@swagger_auto_schema(
+    method='get',
+    operation_summary='OAuth 서비스 메인',
+    operation_description='OAuth 서비스의 엔드포인트 목록을 반환합니다.',
+    responses={200: openapi.Response('엔드포인트 목록')}
+)
 @api_view(['GET'])
 def oauth_main(request):
     """
@@ -444,6 +584,12 @@ def oauth_main(request):
     }, status=status.HTTP_200_OK)
 
 
+@swagger_auto_schema(
+    method='get',
+    operation_summary='Registration 서비스 메인',
+    operation_description='Registration 서비스의 엔드포인트 목록 및 플로우를 반환합니다.',
+    responses={200: openapi.Response('엔드포인트 목록 및 플로우')}
+)
 @api_view(['GET'])
 def registration_main(request):
     """
