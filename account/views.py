@@ -38,6 +38,7 @@ from .decorators import login_required, registration_step_required
 # ============================================
 
 @api_view(['POST'])
+@registration_step_required('agreed')
 def send_verification_code_view(request):
     """
     이메일 인증코드 발송
@@ -64,7 +65,8 @@ def send_verification_code_view(request):
 
     # 인증코드 생성 및 저장
     code = generate_verification_code()
-    store_verification_code(email, code)
+    reg_sid = request.COOKIES.get('reg_sid')
+    store_verification_code(email, code, reg_sid)
 
     # 이메일 발송
     if send_verification_email(email, code):
@@ -83,6 +85,7 @@ def send_verification_code_view(request):
 
 
 @api_view(['POST'])
+@registration_step_required('agreed')
 def verify_code_view(request):
     """
     인증코드 검증
@@ -98,37 +101,33 @@ def verify_code_view(request):
 
     email = serializer.validated_data['email']
     code = serializer.validated_data['code']
+    reg_sid = request.COOKIES.get('reg_sid')
 
     # 인증코드 검증
-    if validate_verification_code(email, code):
-        # reg_sid 및 registration_token 생성
-        reg_sid = generate_reg_sid()
-        registration_token = generate_registration_token()
+    if validate_verification_code(email, code, reg_sid):
+        # 기존 세션 데이터 가져오기
+        registration_token = request.headers.get('X-Registration-Token')
+        _, session_data = validate_registration_session(reg_sid, token=registration_token)
 
-        # 세션 저장
+        # 새로운 registration_token 생성
+        new_token = generate_registration_token()
+
+        # 세션 업데이트
         store_registration_session(
             reg_sid,
-            data={'email': email},
+            data={
+                **session_data['data'],
+                'email': email
+            },
             step='email_verified',
-            token=registration_token
+            token=new_token
         )
 
-        response = Response({
+        return Response({
             'success': True,
             'message': '이메일 인증이 완료되었습니다.',
-            'registration_token': registration_token
+            'registration_token': new_token
         }, status=status.HTTP_200_OK)
-
-        # reg_sid 쿠키 설정
-        response.set_cookie(
-            key='reg_sid',
-            value=reg_sid,
-            max_age=1800,  # 30분
-            httponly=True,
-            samesite='Lax'
-        )
-
-        return response
     else:
         return Response({
             'success': False,
@@ -138,7 +137,6 @@ def verify_code_view(request):
 
 
 @api_view(['GET', 'POST'])
-@registration_step_required('email_verified')
 def registration_agree_view(request):
     """
     약관 동의
@@ -167,34 +165,40 @@ def registration_agree_view(request):
                 'errors': serializer.errors
             }, status=status.HTTP_400_BAD_REQUEST)
 
-        # 기존 세션 데이터 가져오기
-        reg_sid = request.COOKIES.get('reg_sid')
-        registration_token = request.headers.get('X-Registration-Token')
-        _, session_data = validate_registration_session(reg_sid, token=registration_token)
+        # reg_sid 및 registration_token 생성
+        reg_sid = generate_reg_sid()
+        registration_token = generate_registration_token()
 
-        # 동의 정보 저장
-        email = session_data['data']['email']
-        new_token = generate_registration_token()
-
+        # 세션 저장
         store_registration_session(
             reg_sid,
             data={
-                'email': email,
                 'agreements': serializer.validated_data
             },
             step='agreed',
-            token=new_token
+            token=registration_token
         )
 
-        return Response({
+        response = Response({
             'success': True,
             'message': '약관 동의가 완료되었습니다.',
-            'registration_token': new_token
+            'registration_token': registration_token
         }, status=status.HTTP_200_OK)
+
+        # reg_sid 쿠키 설정
+        response.set_cookie(
+            key='reg_sid',
+            value=reg_sid,
+            max_age=1800,  # 30분
+            httponly=True,
+            samesite='Lax'
+        )
+
+        return response
 
 
 @api_view(['POST'])
-@registration_step_required('agreed')
+@registration_step_required('email_verified')
 def registration_basic_info_view(request):
     """
     기본정보 등록 및 회원가입 완료
@@ -384,7 +388,7 @@ def user_info_view(request):
 
 
 # ============================================
-# Account 메인
+# Entry Points
 # ============================================
 
 @api_view(['GET'])
@@ -398,14 +402,68 @@ def account_main(request):
         'service': 'Account',
         'version': 'v1alpha1',
         'endpoints': {
+            'auth': '/api/v1alpha1/account/auth',
+            'oauth': '/api/v1alpha1/account/oauth',
+            'user_info': '/api/v1alpha1/account/info'
+        }
+    }, status=status.HTTP_200_OK)
+
+
+@api_view(['GET'])
+def auth_main(request):
+    """
+    Auth 서비스 메인
+    GET /api/v1alpha1/account/auth
+    """
+    return Response({
+        'success': True,
+        'service': 'Auth',
+        'version': 'v1alpha1',
+        'endpoints': {
             'login': '/api/v1alpha1/account/auth/login',
             'logout': '/api/v1alpha1/account/auth/logout',
-            'registration': {
-                'send_code': '/api/v1alpha1/account/auth/registration/email/verification-code',
-                'verify_code': '/api/v1alpha1/account/auth/registration/email/verification-code/verify',
-                'agree': '/api/v1alpha1/account/auth/registration/agree',
-                'basic_info': '/api/v1alpha1/account/auth/registration/basic-info'
-            },
-            'user_info': '/api/v1alpha1/account/info'
+            'registration': '/api/v1alpha1/account/auth/registration'
+        }
+    }, status=status.HTTP_200_OK)
+
+
+@api_view(['GET'])
+def oauth_main(request):
+    """
+    OAuth 서비스 메인
+    GET /api/v1alpha1/account/oauth
+    """
+    return Response({
+        'success': True,
+        'service': 'OAuth',
+        'version': 'v1alpha1',
+        'endpoints': {
+            'kakao': '/api/v1alpha1/account/oauth/kakao',
+            'naver': '/api/v1alpha1/account/oauth/naver'
+        }
+    }, status=status.HTTP_200_OK)
+
+
+@api_view(['GET'])
+def registration_main(request):
+    """
+    Registration 서비스 메인
+    GET /api/v1alpha1/account/auth/registration
+    """
+    return Response({
+        'success': True,
+        'service': 'Registration',
+        'version': 'v1alpha1',
+        'flow': [
+            '1. agree',
+            '2. send_verification_code',
+            '3. verify_code',
+            '4. basic_info'
+        ],
+        'endpoints': {
+            'agree': '/api/v1alpha1/account/auth/registration/agree',
+            'send_verification_code': '/api/v1alpha1/account/auth/registration/email/verification-code',
+            'verify_code': '/api/v1alpha1/account/auth/registration/email/verification-code/verify',
+            'basic_info': '/api/v1alpha1/account/auth/registration/basic-info'
         }
     }, status=status.HTTP_200_OK)

@@ -60,30 +60,32 @@ def validate_registration_session(reg_sid, required_step=None, token=None):
     return True, session_data
 
 
-def store_verification_code(email, code):
+def store_verification_code(email, code, reg_sid):
     """
     이메일 인증코드 저장
 
     Args:
         email: 이메일 주소
         code: 인증코드 (6자리)
+        reg_sid: 회원가입 세션 ID
     """
-    key = f"verification_code:{email}"
+    key = f"verification_code:{reg_sid}:{email}"
     cache.set(key, code, timeout=300)  # 5분
 
 
-def validate_verification_code(email, code):
+def validate_verification_code(email, code, reg_sid):
     """
     이메일 인증코드 검증
 
     Args:
         email: 이메일 주소
         code: 입력된 인증코드
+        reg_sid: 회원가입 세션 ID
 
     Returns:
         bool: 검증 성공 여부
     """
-    key = f"verification_code:{email}"
+    key = f"verification_code:{reg_sid}:{email}"
     stored_code = cache.get(key)
 
     if not stored_code:
@@ -94,7 +96,7 @@ def validate_verification_code(email, code):
         return True
 
     # 실패 횟수 증가
-    fail_key = f"verification_fail:{email}"
+    fail_key = f"verification_fail:{reg_sid}:{email}"
     fail_count = cache.get(fail_key, 0)
     fail_count += 1
 
