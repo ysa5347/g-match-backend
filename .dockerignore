@@ -1,0 +1,52 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+
+# Virtual Environment
+.venv/
+venv/
+env/
+ENV/
+
+# Testing
+tests/
+.coverage
+htmlcov/
+.pytest_cache/
+*.log
+
+# Documentation
+CLAUDE/
+*.md
+!requirements.txt
+
+# Git
+.git/
+.gitignore
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Database (local development)
+db.sqlite3
+*.db
+
+# Environment
+.env
+.env.local
+
+# Static files (will be collected in container)
+staticfiles/
+media/
+
+# macOS
+.DS_Store
+
+# Misc
+*.csv
