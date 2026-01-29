@@ -24,16 +24,10 @@ class ProfileViewSet(viewsets.ViewSet):
     PROFILE_STATUS_NO_SURVEY = 1
     PROFILE_STATUS_COMPLETE = 2
 
-    PROFILE_SCREEN_MAP = {
-        0: "need_property",
-        1: "need_survey",
-        2: "complete",
-    }
-
     def list(self, request):
         """
         GET /profile/
-        프로필 상태 조회 (화면 결정용)
+        프로필 상태 조회
         """
         user = request.user
 
@@ -43,21 +37,18 @@ class ProfileViewSet(viewsets.ViewSet):
         if not property_obj:
             return Response({
                 "success": True,
-                "profile_status": self.PROFILE_STATUS_NO_PROPERTY,
-                "screen": self.PROFILE_SCREEN_MAP[self.PROFILE_STATUS_NO_PROPERTY]
+                "profile_status": self.PROFILE_STATUS_NO_PROPERTY
             }, status=status.HTTP_200_OK)
 
         if not survey_obj:
             return Response({
                 "success": True,
-                "profile_status": self.PROFILE_STATUS_NO_SURVEY,
-                "screen": self.PROFILE_SCREEN_MAP[self.PROFILE_STATUS_NO_SURVEY]
+                "profile_status": self.PROFILE_STATUS_NO_SURVEY
             }, status=status.HTTP_200_OK)
 
         return Response({
             "success": True,
             "profile_status": self.PROFILE_STATUS_COMPLETE,
-            "screen": self.PROFILE_SCREEN_MAP[self.PROFILE_STATUS_COMPLETE],
             "user_pk": user.user_pk,
             "property": PropertySerializer(property_obj).data,
             "survey": SurveySerializer(survey_obj).data,
@@ -154,22 +145,11 @@ class MatchingViewSet(viewsets.ViewSet):
     # permission_classes = [permissions.IsAuthenticated]
     permission_classes = [permissions.AllowAny]
 
-    # 화면 매핑 (MatchStatusChoice와 일관성 유지)
-    SCREEN_MAP = {
-        Property.MatchStatusChoice.NOT_STARTED: "initial",
-        Property.MatchStatusChoice.IN_QUEUE: "waiting_queue",
-        Property.MatchStatusChoice.MATCHED: "show_result",
-        Property.MatchStatusChoice.MY_APPROVED: "waiting_partner",
-        Property.MatchStatusChoice.BOTH_APPROVED: "contact_exchange",
-        Property.MatchStatusChoice.PARTNER_REJECTED: "partner_rejected",
-        Property.MatchStatusChoice.PARTNER_CANCELLED: "partner_cancelled",
-    }
-
     # ==================== 상태 조회 ====================
     def list(self, request):
         """
         GET /matching/
-        현재 매칭 상태 조회 (화면 결정용)
+        현재 매칭 상태 조회
         """
         user = request.user
         property_obj = Property.objects.filter(user_pk=user.user_pk).last()
@@ -200,8 +180,7 @@ class MatchingViewSet(viewsets.ViewSet):
 
         return Response({
             "success": True,
-            "match_status": match_status,
-            "screen": self.SCREEN_MAP.get(match_status, "initial")
+            "match_status": match_status
         }, status=status.HTTP_200_OK)
 
     # ==================== 대기열 등록 ====================
@@ -303,7 +282,7 @@ class MatchingViewSet(viewsets.ViewSet):
 
         # status 2, 3인 경우: 상대방 처리 + MatchHistory 업데이트
         if current_status in [Property.MatchStatusChoice.MATCHED, Property.MatchStatusChoice.MY_APPROVED]:
-            match_history = self._get_pending_match_history(user.user_pk)
+            match_history = self._get_match_history_by_status(user.user_pk, current_status)
             if match_history:
                 # 내 approval을 REJECTED로
                 self._update_my_approval(match_history, user.user_pk, MatchHistory.ApprovalChoice.REJECTED)
@@ -334,7 +313,9 @@ class MatchingViewSet(viewsets.ViewSet):
     def result(self, request):
         """
         GET /matching/result/
-        매칭 결과 상세 조회 (status 2, 3일 때)
+        매칭 결과 상세 조회 (status 2, 3, 5일 때)
+        - status 2, 3: PENDING 상태의 MatchHistory 조회
+        - status 5: FAILED 상태의 MatchHistory 조회 (상대가 거절한 경우)
         """
         user = request.user
         property_obj = Property.objects.filter(user_pk=user.user_pk).last()
@@ -345,20 +326,23 @@ class MatchingViewSet(viewsets.ViewSet):
                 "error": "profile_not_found"
             }, status=status.HTTP_404_NOT_FOUND)
 
+        current_status = property_obj.match_status
+
         # 상태 확인
         allowed_statuses = [
             Property.MatchStatusChoice.MATCHED,
             Property.MatchStatusChoice.MY_APPROVED,
+            Property.MatchStatusChoice.PARTNER_REJECTED,
         ]
-        if property_obj.match_status not in allowed_statuses:
+        if current_status not in allowed_statuses:
             return Response({
                 "success": False,
                 "error": "no_match_result",
-                "match_status": property_obj.match_status
+                "match_status": current_status
             }, status=status.HTTP_400_BAD_REQUEST)
 
-        # MatchHistory에서 현재 매칭 조회
-        match_history = self._get_pending_match_history(user.user_pk)
+        # MatchHistory 조회 (status에 따라 다른 조회)
+        match_history = self._get_match_history_by_status(user.user_pk, current_status)
         if not match_history:
             return Response({
                 "success": False,
@@ -381,6 +365,7 @@ class MatchingViewSet(viewsets.ViewSet):
 
         return Response({
             "success": True,
+            "match_status": current_status,
             "match_id": match_history.match_id,
             "compatibility_score": match_history.compatibility_score,
             "partner": {
@@ -412,13 +397,6 @@ class MatchingViewSet(viewsets.ViewSet):
         return MatchHistory.objects.filter(
             Q(user_a_pk=user_pk) | Q(user_b_pk=user_pk),
             final_match_status=result_status
-        ).order_by('-matched_at').first()
-
-    def _get_pending_match_history(self, user_pk):
-        """현재 진행 중인 (PENDING) MatchHistory 조회"""
-        return MatchHistory.objects.filter(
-            Q(user_a_pk=user_pk) | Q(user_b_pk=user_pk),
-            final_match_status=MatchHistory.ResultStatus.PENDING
         ).order_by('-matched_at').first()
 
     def _get_partner_pk(self, match_history, my_pk):
