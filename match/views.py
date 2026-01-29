@@ -19,26 +19,47 @@ class ProfileViewSet(viewsets.ViewSet):
     # permission_classes = [permissions.IsAuthenticated]
     permission_classes = [permissions.AllowAny]
 
+    # 프로필 상태 상수
+    PROFILE_STATUS_NO_PROPERTY = 0
+    PROFILE_STATUS_NO_SURVEY = 1
+    PROFILE_STATUS_COMPLETE = 2
+
+    PROFILE_SCREEN_MAP = {
+        0: "need_property",
+        1: "need_survey",
+        2: "complete",
+    }
+
     def list(self, request):
-        user = request.user  # 프로덕션용
+        """
+        GET /profile/
+        프로필 상태 조회 (화면 결정용)
+        """
+        user = request.user
 
         property_obj = Property.objects.filter(user_pk=user.user_pk).last()
         survey_obj = Survey.objects.filter(user_pk=user.user_pk).last()
 
         if not property_obj:
             return Response({
-                "message": "Profile does not exist",
-                "need": "Property"
-            }, status=status.HTTP_404_NOT_FOUND)
-        elif not survey_obj:
+                "success": True,
+                "profile_status": self.PROFILE_STATUS_NO_PROPERTY,
+                "screen": self.PROFILE_SCREEN_MAP[self.PROFILE_STATUS_NO_PROPERTY]
+            }, status=status.HTTP_200_OK)
+
+        if not survey_obj:
             return Response({
-                "message": "Profile does not exist",
-                "need": "Survey"
-            }, status=status.HTTP_404_NOT_FOUND)
+                "success": True,
+                "profile_status": self.PROFILE_STATUS_NO_SURVEY,
+                "screen": self.PROFILE_SCREEN_MAP[self.PROFILE_STATUS_NO_SURVEY]
+            }, status=status.HTTP_200_OK)
 
         return Response({
+            "success": True,
+            "profile_status": self.PROFILE_STATUS_COMPLETE,
+            "screen": self.PROFILE_SCREEN_MAP[self.PROFILE_STATUS_COMPLETE],
             "user_pk": user.user_pk,
-            "profile": PropertySerializer(property_obj).data,
+            "property": PropertySerializer(property_obj).data,
             "survey": SurveySerializer(survey_obj).data,
         }, status=status.HTTP_200_OK)
 
@@ -50,10 +71,15 @@ class ProfileViewSet(viewsets.ViewSet):
         if request.method == 'GET':
             property_obj = Property.objects.filter(user_pk=user.user_pk).last()
             if property_obj:
-                serializer = PropertySerializer(property_obj)
-                return Response(serializer.data, status=status.HTTP_200_OK)
+                return Response({
+                    "success": True,
+                    "property": PropertySerializer(property_obj).data
+                }, status=status.HTTP_200_OK)
             else:
-                return Response({"message": "Property does not exist"}, status=status.HTTP_404_NOT_FOUND)
+                return Response({
+                    "success": False,
+                    "error": "property_not_found"
+                }, status=status.HTTP_404_NOT_FOUND)
 
         if request.method == 'POST':
             serializer = PropertySerializer(data=request.data)
@@ -64,10 +90,17 @@ class ProfileViewSet(viewsets.ViewSet):
                     nickname=user.nickname,
                     department=user.department,
                     gender=user.gender
-                    )
-                return Response({"message": "Property was created successfully"}, status=status.HTTP_201_CREATED)
+                )
+                return Response({
+                    "success": True,
+                    "message": "Property was created successfully"
+                }, status=status.HTTP_201_CREATED)
 
-            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+            return Response({
+                "success": False,
+                "error": "validation_failed",
+                "details": serializer.errors
+            }, status=status.HTTP_400_BAD_REQUEST)
 
     @action(detail=False, methods=['get', 'post'], url_path='survey')
     def survey_info(self, request):
@@ -77,10 +110,15 @@ class ProfileViewSet(viewsets.ViewSet):
             survey_obj = Survey.objects.filter(user_pk=user.user_pk).last()
 
             if survey_obj:
-                serializer = SurveySerializer(survey_obj)
-                return Response(serializer.data, status=status.HTTP_200_OK)
+                return Response({
+                    "success": True,
+                    "survey": SurveySerializer(survey_obj).data
+                }, status=status.HTTP_200_OK)
             else:
-                return Response({"message": "Survey does not exist"}, status=status.HTTP_404_NOT_FOUND)
+                return Response({
+                    "success": False,
+                    "error": "survey_not_found"
+                }, status=status.HTTP_404_NOT_FOUND)
 
         if request.method == 'POST':
             serializer = SurveySerializer(data=request.data)
@@ -90,10 +128,18 @@ class ProfileViewSet(viewsets.ViewSet):
                 serializer.save(
                     user_pk=user.user_pk,
                     scores=score,
-                    badges=badge)
-                return Response({"message": "Survey was created successfully"}, status=status.HTTP_201_CREATED)
+                    badges=badge
+                )
+                return Response({
+                    "success": True,
+                    "message": "Survey was created successfully"
+                }, status=status.HTTP_201_CREATED)
 
-            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+            return Response({
+                "success": False,
+                "error": "validation_failed",
+                "details": serializer.errors
+            }, status=status.HTTP_400_BAD_REQUEST)
 
 
 class MatchingViewSet(viewsets.ViewSet):
@@ -339,10 +385,7 @@ class MatchingViewSet(viewsets.ViewSet):
             "compatibility_score": match_history.compatibility_score,
             "partner": {
                 "property": PropertySerializer(partner_property).data,
-                "survey": {
-                    "scores": partner_survey.scores,
-                    "badges": partner_survey.badges
-                }
+                "survey": SurveySerializer(partner_survey).data
             }
         }, status=status.HTTP_200_OK)
 
