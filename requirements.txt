@@ -8,7 +8,7 @@ dotenv==0.9.9
 drf-yasg==1.21.8
 inflection==0.5.1
 Markdown==3.10
-mysqlclient==2.2.1
+mysqlclient==2.2.7          # c 컴파일러 문제로 최신버전 사용
 packaging==26.0
 python-dotenv==1.2.1
 pytz==2025.2
