@@ -10,9 +10,13 @@ class Property(models.Model):
         AVOID = 2, '비선호'
 
     class MatchStatusChoice(models.IntegerChoices):
-        NOT_STARTED = 0, '시작안함'
-        IN_PROGRESS = 1, '진행중'
-        COMPLETED = 2, '완료'
+        NOT_STARTED = 0, '매칭 시작 전'
+        IN_QUEUE = 1, '대기열 등록됨'
+        MATCHED = 2, '임시 매칭됨'
+        MY_APPROVED = 3, '내가 수락함'
+        BOTH_APPROVED = 4, '둘 다 수락'
+        PARTNER_REJECTED = 5, '상대가 거절함'
+        PARTNER_REMATCHED = 6, '상대가 재매칭함'
 
     property_id = models.BigAutoField(primary_key=True)
     created_at = models.DateTimeField(auto_now_add=True)
