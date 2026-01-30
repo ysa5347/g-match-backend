@@ -222,6 +222,7 @@ class MatchingViewSet(viewsets.ViewSet):
                 "dorm_building": property_obj.dorm_building,
                 "stay_period": property_obj.stay_period,
                 "is_smoker": property_obj.is_smoker,
+                "mate_smoker": property_obj.mate_smoker,
                 "has_fridge": property_obj.has_fridge,
                 "mate_fridge": property_obj.mate_fridge,
                 "has_router": property_obj.has_router,
@@ -230,7 +231,8 @@ class MatchingViewSet(viewsets.ViewSet):
             "survey": survey_obj.surveys,
             "weights": survey_obj.weights,
             "priority": 0,
-            "registered_at": timezone.now().isoformat()
+            "registered_at": timezone.now().isoformat(),
+            "edge_calculated": False
         }
 
         redis_key = f"match:user-queue:{user.user_pk}"
