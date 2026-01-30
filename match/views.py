@@ -2,6 +2,7 @@ from rest_framework import viewsets, permissions, status
 from rest_framework.decorators import action
 from rest_framework.response import Response
 from django.utils import timezone
+from django.db import transaction
 from datetime import timedelta
 import redis
 import json
@@ -168,7 +169,7 @@ class MatchingViewSet(viewsets.ViewSet):
             Property.MatchStatusChoice.MY_APPROVED,
             Property.MatchStatusChoice.BOTH_APPROVED,
             Property.MatchStatusChoice.PARTNER_REJECTED,
-            Property.MatchStatusChoice.PARTNER_CANCELLED,
+            Property.MatchStatusChoice.PARTNER_REMATCHED,
         ]:
             match_history = self._get_match_history_by_status(user.user_pk, match_status)
             if match_history and match_history.matched_at:
@@ -228,14 +229,13 @@ class MatchingViewSet(viewsets.ViewSet):
             },
             "survey": survey_obj.surveys,
             "weights": survey_obj.weights,
-            "priority": 0,  # 초기 우선순위
+            "priority": 0,
             "registered_at": timezone.now().isoformat()
         }
 
         redis_key = f"match:user-queue:{user.user_pk}"
         redis_client.set(redis_key, json.dumps(queue_data))
 
-        # 상태 변경
         property_obj.match_status = Property.MatchStatusChoice.IN_QUEUE
         property_obj.save()
 
@@ -280,7 +280,7 @@ class MatchingViewSet(viewsets.ViewSet):
             redis_key = f"match:user-queue:{user.user_pk}"
             redis_client.delete(redis_key)
 
-        # status 2, 3인 경우: 상대방 처리 + MatchHistory 업데이트
+        # status 2, 3인 경우: 상대방 status 5로 변경 + MatchHistory 업데이트
         if current_status in [Property.MatchStatusChoice.MATCHED, Property.MatchStatusChoice.MY_APPROVED]:
             match_history = self._get_match_history_by_status(user.user_pk, current_status)
             if match_history:
@@ -291,13 +291,13 @@ class MatchingViewSet(viewsets.ViewSet):
 
                 # 상대방 status를 PARTNER_REJECTED(5)로
                 partner_pk = self._get_partner_pk(match_history, user.user_pk)
-                partner_property = Property.objects.filter(user_pk=partner_pk).last()
-                if partner_property and partner_property.match_status in [
+                partner_property_obj = Property.objects.filter(user_pk=partner_pk).last()
+                if partner_property_obj and partner_property_obj.match_status in [
                     Property.MatchStatusChoice.MATCHED,
                     Property.MatchStatusChoice.MY_APPROVED
                 ]:
-                    partner_property.match_status = Property.MatchStatusChoice.PARTNER_REJECTED
-                    partner_property.save()
+                    partner_property_obj.match_status = Property.MatchStatusChoice.PARTNER_REJECTED
+                    partner_property_obj.save()
 
         # 내 상태 초기화
         property_obj.match_status = Property.MatchStatusChoice.NOT_STARTED
@@ -341,7 +341,7 @@ class MatchingViewSet(viewsets.ViewSet):
                 "match_status": current_status
             }, status=status.HTTP_400_BAD_REQUEST)
 
-        # MatchHistory 조회 (status에 따라 다른 조회)
+        # MatchHistory 조회
         match_history = self._get_match_history_by_status(user.user_pk, current_status)
         if not match_history:
             return Response({
@@ -353,10 +353,10 @@ class MatchingViewSet(viewsets.ViewSet):
         partner_prop_id = match_history.prop_b_id if match_history.user_a_pk == user.user_pk else match_history.prop_a_id
         partner_surv_id = match_history.surv_b_id if match_history.user_a_pk == user.user_pk else match_history.surv_a_id
 
-        partner_property = Property.objects.filter(property_id=partner_prop_id).first()
+        partner_property_obj = Property.objects.filter(property_id=partner_prop_id).first()
         partner_survey = Survey.objects.filter(survey_id=partner_surv_id).first()
 
-        if not partner_property or not partner_survey:
+        if not partner_property_obj or not partner_survey:
             return Response({
                 "success": False,
                 "error": "partner_data_fetch_failed",
@@ -369,12 +369,13 @@ class MatchingViewSet(viewsets.ViewSet):
             "match_id": match_history.match_id,
             "compatibility_score": match_history.compatibility_score,
             "partner": {
-                "property": PropertySerializer(partner_property).data,
+                "property": PropertySerializer(partner_property_obj).data,
                 "survey": SurveySerializer(partner_survey).data
             }
         }, status=status.HTTP_200_OK)
 
     # ==================== Helper Methods ====================
+    # ========================================================
     def _get_match_history_by_status(self, user_pk, match_status):
         """
         match_status에 따라 적절한 MatchHistory 조회
@@ -387,7 +388,7 @@ class MatchingViewSet(viewsets.ViewSet):
             Property.MatchStatusChoice.MY_APPROVED: MatchHistory.ResultStatus.PENDING,
             Property.MatchStatusChoice.BOTH_APPROVED: MatchHistory.ResultStatus.SUCCESS,
             Property.MatchStatusChoice.PARTNER_REJECTED: MatchHistory.ResultStatus.FAILED,
-            Property.MatchStatusChoice.PARTNER_CANCELLED: MatchHistory.ResultStatus.FAILED,
+            Property.MatchStatusChoice.PARTNER_REMATCHED: MatchHistory.ResultStatus.FAILED,
         }
 
         result_status = status_to_result.get(match_status)
@@ -412,4 +413,272 @@ class MatchingViewSet(viewsets.ViewSet):
         else:
             match_history.b_approval = approval_status
         match_history.save()
+
+    def _get_partner_approval(self, match_history, my_pk):
+        """상대방의 approval 상태 반환"""
+        if match_history.user_a_pk == my_pk:
+            return match_history.b_approval
+        return match_history.a_approval
+
+    # ========================================================
+    # ========================================================
+
+    # ==================== 수락 ====================
+    @action(detail=False, methods=['post'], url_path='agree')
+    def agree(self, request):
+        """
+        POST /matching/agree/
+        매칭 수락 (status 2 → 3, 상대도 수락 시 양쪽 → 4)
+        Race condition 방지를 위해 트랜잭션 + select_for_update 사용
+        """
+        user = request.user
+
+        with transaction.atomic():
+            # 내 property 락
+            property_obj = Property.objects.select_for_update().filter(
+                user_pk=user.user_pk
+            ).last()
+
+            if not property_obj:
+                return Response({
+                    "success": False,
+                    "error": "profile_not_found"
+                }, status=status.HTTP_404_NOT_FOUND)
+
+            current_status = property_obj.match_status
+
+            # 상태 확인 (status 2에서만 agree 가능)
+            if current_status != Property.MatchStatusChoice.MATCHED:
+                # 이미 상대가 reject해서 5가 됐거나, 다른 상태면 실패
+                return Response({
+                    "success": False,
+                    "error": "invalid_status",
+                    "match_status": current_status
+                }, status=status.HTTP_400_BAD_REQUEST)
+
+            # MatchHistory 조회
+            match_history = self._get_match_history_by_status(user.user_pk, current_status)
+            if not match_history:
+                return Response({
+                    "success": False,
+                    "error": "match_history_not_found"
+                }, status=status.HTTP_404_NOT_FOUND)
+
+            # 내 approval을 APPROVED로
+            self._update_my_approval(match_history, user.user_pk, MatchHistory.ApprovalChoice.APPROVED)
+
+            # 상대 approval 확인
+            partner_approval = self._get_partner_approval(match_history, user.user_pk)
+
+            if partner_approval == MatchHistory.ApprovalChoice.APPROVED:
+                # 상대도 수락 → 둘 다 status 4로
+                partner_pk = self._get_partner_pk(match_history, user.user_pk)
+                partner_property_obj = Property.objects.select_for_update().filter(
+                    user_pk=partner_pk
+                ).last()
+
+                property_obj.match_status = Property.MatchStatusChoice.BOTH_APPROVED
+                if partner_property_obj:
+                    partner_property_obj.match_status = Property.MatchStatusChoice.BOTH_APPROVED
+                    partner_property_obj.save()
+                match_history.final_match_status = MatchHistory.ResultStatus.SUCCESS
+                match_history.save()
+            else:
+                # 상대는 아직 대기 중 → 내 status 3으로
+                property_obj.match_status = Property.MatchStatusChoice.MY_APPROVED
+
+            property_obj.save()
+
+        return Response({
+            "success": True,
+            "match_status": property_obj.match_status
+        }, status=status.HTTP_200_OK)
+
+    # ==================== 거절 ====================
+    @action(detail=False, methods=['post'], url_path='reject')
+    def reject(self, request):
+        """
+        POST /matching/reject/
+        매칭 거절 (status 2, 3 → 0, 상대방 → 5)
+        """
+        user = request.user
+
+        with transaction.atomic():
+            property_obj = Property.objects.select_for_update().filter(
+                user_pk=user.user_pk
+            ).last()
+
+            if not property_obj:
+                return Response({
+                    "success": False,
+                    "error": "profile_not_found"
+                }, status=status.HTTP_404_NOT_FOUND)
+
+            current_status = property_obj.match_status
+
+            # 상태 확인 (status 2, 3에서만 reject 가능)
+            allowed_statuses = [
+                Property.MatchStatusChoice.MATCHED,
+                Property.MatchStatusChoice.MY_APPROVED,
+            ]
+            if current_status not in allowed_statuses:
+                return Response({
+                    "success": False,
+                    "error": "invalid_status",
+                    "match_status": current_status
+                }, status=status.HTTP_400_BAD_REQUEST)
+
+            # MatchHistory 조회
+            match_history = self._get_match_history_by_status(user.user_pk, current_status)
+            if not match_history:
+                return Response({
+                    "success": False,
+                    "error": "match_history_not_found"
+                }, status=status.HTTP_404_NOT_FOUND)
+
+            # 내 approval을 REJECTED로
+            self._update_my_approval(match_history, user.user_pk, MatchHistory.ApprovalChoice.REJECTED)
+            match_history.final_match_status = MatchHistory.ResultStatus.FAILED
+            match_history.save()
+
+            # 상대방 status를 PARTNER_REJECTED(5)로
+            partner_pk = self._get_partner_pk(match_history, user.user_pk)
+            partner_property_obj = Property.objects.select_for_update().filter(
+                user_pk=partner_pk
+            ).last()
+
+            if partner_property_obj and partner_property_obj.match_status in [
+                Property.MatchStatusChoice.MATCHED,
+                Property.MatchStatusChoice.MY_APPROVED
+            ]:
+                partner_property_obj.match_status = Property.MatchStatusChoice.PARTNER_REJECTED
+                partner_property_obj.save()
+
+            # 내 상태 초기화
+            property_obj.match_status = Property.MatchStatusChoice.NOT_STARTED
+            property_obj.save()
+
+        return Response({
+            "success": True,
+            "match_status": Property.MatchStatusChoice.NOT_STARTED
+        }, status=status.HTTP_200_OK)
+
+    # ==================== 연락처 조회 ====================
+    @action(detail=False, methods=['get'], url_path='contact')
+    def contact(self, request):
+        """
+        GET /matching/contact/
+        상대방 연락처 조회 (status 4, 5, 6일 때)
+        """
+        user = request.user
+        property_obj = Property.objects.filter(user_pk=user.user_pk).last()
+
+        if not property_obj:
+            return Response({
+                "success": False,
+                "error": "profile_not_found"
+            }, status=status.HTTP_404_NOT_FOUND)
+
+        current_status = property_obj.match_status
+
+        # 상태 확인 (status 4, 5, 6에서만 contact 조회 가능)
+        allowed_statuses = [
+            Property.MatchStatusChoice.BOTH_APPROVED,
+            Property.MatchStatusChoice.PARTNER_REJECTED,
+            Property.MatchStatusChoice.PARTNER_REMATCHED,
+        ]
+        if current_status not in allowed_statuses:
+            return Response({
+                "success": False,
+                "error": "invalid_status",
+                "match_status": current_status
+            }, status=status.HTTP_400_BAD_REQUEST)
+
+        # MatchHistory 조회
+        match_history = self._get_match_history_by_status(user.user_pk, current_status)
+        if not match_history:
+            return Response({
+                "success": False,
+                "error": "match_history_not_found"
+            }, status=status.HTTP_404_NOT_FOUND)
+
+        # 상대방 pk 조회
+        partner_pk = self._get_partner_pk(match_history, user.user_pk)
+
+        # TODO: account 앱에서 연락처 조회
+        # from account.models import Account
+        # partner_account = Account.objects.filter(user_pk=partner_pk).first()
+        # phone = partner_account.phone if partner_account else None
+
+        # 임시: Property에서 nickname 반환 (account 연동 후 수정 필요)
+        partner_property_obj = Property.objects.filter(user_pk=partner_pk).last()
+
+        return Response({
+            "success": True,
+            "match_status": current_status,
+            "partner": {
+                "user_pk": partner_pk,
+                "nickname": partner_property_obj.nickname if partner_property_obj else None,
+                # "phone": phone,  # account 연동 후 활성화
+            }
+        }, status=status.HTTP_200_OK)
+
+    # ==================== 재매칭 ====================
+    @action(detail=False, methods=['post'], url_path='rematch')
+    def rematch(self, request):
+        """
+        POST /matching/rematch/
+        재매칭 요청 (status 4, 5, 6 → 0, 상대가 status 4면 → 6)
+        """
+        user = request.user
+
+        with transaction.atomic():
+            property_obj = Property.objects.select_for_update().filter(
+                user_pk=user.user_pk
+            ).last()
+
+            if not property_obj:
+                return Response({
+                    "success": False,
+                    "error": "profile_not_found"
+                }, status=status.HTTP_404_NOT_FOUND)
+
+            current_status = property_obj.match_status
+
+            # 상태 확인 (status 4, 5, 6에서만 rematch 가능)
+            allowed_statuses = [
+                Property.MatchStatusChoice.BOTH_APPROVED,
+                Property.MatchStatusChoice.PARTNER_REJECTED,
+                Property.MatchStatusChoice.PARTNER_REMATCHED,
+            ]
+            if current_status not in allowed_statuses:
+                return Response({
+                    "success": False,
+                    "error": "invalid_status",
+                    "match_status": current_status
+                }, status=status.HTTP_400_BAD_REQUEST)
+
+            # status 4인 경우: 상대방 status를 6으로 변경
+            if current_status == Property.MatchStatusChoice.BOTH_APPROVED:
+                match_history = self._get_match_history_by_status(user.user_pk, current_status)
+                if match_history:
+                    partner_pk = self._get_partner_pk(match_history, user.user_pk)
+                    partner_property_obj = Property.objects.select_for_update().filter(
+                        user_pk=partner_pk
+                    ).last()
+
+                    if partner_property_obj and partner_property_obj.match_status == Property.MatchStatusChoice.BOTH_APPROVED:
+                        partner_property_obj.match_status = Property.MatchStatusChoice.PARTNER_REMATCHED
+                        partner_property_obj.save()
+
+            # status 5, 6인 경우: 상대는 이미 수정되었으므로 건드릴 필요 없음
+
+            # 내 상태 초기화
+            property_obj.match_status = Property.MatchStatusChoice.NOT_STARTED
+            property_obj.save()
+
+        return Response({
+            "success": True,
+            "match_status": Property.MatchStatusChoice.NOT_STARTED
+        }, status=status.HTTP_200_OK)
 
