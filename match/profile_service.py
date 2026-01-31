@@ -88,8 +88,8 @@ class InsightService:
 
         # 2. 공간 관리 (Clean)
         avg_clean = (self._get_val('clean_floor') + self._get_val('clean_trash') + self._get_val('clean_bath')) / 3
-        add_candidate("청소광", 6 - avg_clean, ['clean_floor', 'clean_trash', 'clean_bath'])
-        add_candidate("자연인", avg_clean, ['clean_floor', 'clean_trash', 'clean_bath'])
+        add_candidate("청소광", avg_clean, ['clean_floor', 'clean_trash', 'clean_bath'])
+        add_candidate("자연인", 6 - avg_clean, ['clean_floor', 'clean_trash', 'clean_bath'])
         add_candidate("빨래요정", self._get_val('clean_laundry'), 'clean_laundry')
 
         # 3. 생활 습관 (Habit)
