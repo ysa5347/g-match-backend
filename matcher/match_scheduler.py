@@ -3,7 +3,7 @@ Match Scheduler (단일 Pod)
 
 [처리 흐름]
 1. 락 획득
-2. 70점 이상 edge 조회 + 유저 데이터 조회
+2. 50점 이상 edge 조회 + 유저 데이터 조회
 3. priority 합 DESC, score DESC 정렬 → greedy 매칭
 4. MatchHistory 저장 + user-queue 삭제 + 고아 edge 정리
 5. 남은 유저 priority 증가 (에이징)

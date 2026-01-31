@@ -18,7 +18,7 @@ EDGE_POLLING_INTERVAL = int(os.getenv('EDGE_POLLING_INTERVAL', 10))  # 초
 
 # Match Scheduler 설정
 SCHEDULER_INTERVAL = int(os.getenv('SCHEDULER_INTERVAL', 60))  # 초 (1분)
-MATCH_THRESHOLD = float(os.getenv('MATCH_THRESHOLD', 70.0))  # 최소 매칭 점수
+MATCH_THRESHOLD = float(os.getenv('MATCH_THRESHOLD', 50.0))  # 최소 매칭 점수
 
 # Lock 설정
 LOCK_KEY = 'match:gc:lock'

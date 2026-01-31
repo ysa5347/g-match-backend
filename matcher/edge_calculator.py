@@ -3,8 +3,8 @@ Edge Calculator (단일 Pod)
 
 [처리 흐름]
 1. Redis user-queue polling → 신규 유저 감지 (edge_calculated: false)
-2. basic 정보로 양방향 필터링
-3. 유사도 계산 후 edge 저장
+2. basic 정보 처리 (Hard Filter: 성별 / Soft Score: 나머지)
+3. 유사도 계산 + 감점 적용 후 edge 저장
 4. 처리 완료 시 edge_calculated: true로 변경
 """
 
@@ -24,6 +24,9 @@ logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 )
 logger = logging.getLogger('edge_calculator')
+
+# 불일치 시 감점
+PENALTY_SCORE = 5
 
 
 def get_redis_client():
@@ -48,7 +51,7 @@ def get_all_queue_users(r: redis.Redis) -> list[dict]:
         data = r.get(key)
         if data:
             user_data = json.loads(data)
-            user_data['_redis_key'] = key  # Python 내부에서만 사용, 저장 시 제외됨
+            user_data['_redis_key'] = key
             users.append(user_data)
 
     return users
@@ -65,59 +68,71 @@ def get_calculated_users(all_users: list[dict]) -> list[dict]:
 
 
 # ============================================================
-# 2. basic 정보로 양방향 필터링
+# 2. basic 정보 처리 (Hard Filter + Soft Score)
 # ============================================================
 
-def check_basic_filter(user_a: dict, user_b: dict) -> bool:
-    """
-    양방향 basic 필터링
-    - 성별, 기숙사동, 입주기간: 일치해야 통과
-    - mate_xxx 선호도: 양방향 모두 통과해야 매칭 후보
-    """
+def check_hard_filter(user_a: dict, user_b: dict) -> bool:
+    """Hard Filter: 성별만 체크"""
     basic_a = user_a['basic']
     basic_b = user_b['basic']
 
     if basic_a['gender'] != basic_b['gender']:
         return False
-    if basic_a['dorm_building'] != basic_b['dorm_building']:
-        return False
-    if basic_a['stay_period'] != basic_b['stay_period']:
-        return False
-
-    if not _check_preference(basic_a, basic_b):
-        return False
-    if not _check_preference(basic_b, basic_a):
-        return False
 
     return True
 
 
-def _check_preference(checker: dict, target: dict) -> bool:
+def calculate_basic_penalty(user_a: dict, user_b: dict) -> float:
     """
-    단방향 선호도 체크 (checker가 target을 평가)
-    - 0: 상관없음 → 통과
-    - 1: 선호 → target이 True여야 통과
-    - 2: 비선호 → target이 False여야 통과
+    Soft Score: 불일치 항목마다 -5점 (양방향)
+    - 기숙사동 불일치
+    - 입주기간 불일치
+    - 선호도 불만족 (흡연/냉장고/공유기)
     """
+    basic_a = user_a['basic']
+    basic_b = user_b['basic']
+    penalty = 0
+
+    if basic_a['dorm_building'] != basic_b['dorm_building']:
+        penalty += PENALTY_SCORE
+
+    if basic_a['stay_period'] != basic_b['stay_period']:
+        penalty += PENALTY_SCORE
+
+    # 양방향 선호도 감점
+    penalty += _calculate_preference_penalty(basic_a, basic_b)
+    penalty += _calculate_preference_penalty(basic_b, basic_a)
+
+    return penalty
+
+
+def _calculate_preference_penalty(checker: dict, target: dict) -> float:
+    """
+    단방향 선호도 감점 계산
+    - 선호(1)인데 상대가 미충족 → -5점
+    - 비선호(2)인데 상대가 충족 → -5점
+    """
+    penalty = 0
+
     mate_smoker = checker.get('mate_smoker', 0)
     if mate_smoker == 1 and not target['is_smoker']:
-        return False
+        penalty += PENALTY_SCORE
     if mate_smoker == 2 and target['is_smoker']:
-        return False
+        penalty += PENALTY_SCORE
 
     mate_fridge = checker.get('mate_fridge', 0)
     if mate_fridge == 1 and not target['has_fridge']:
-        return False
+        penalty += PENALTY_SCORE
     if mate_fridge == 2 and target['has_fridge']:
-        return False
+        penalty += PENALTY_SCORE
 
     mate_router = checker.get('mate_router', 0)
     if mate_router == 1 and not target['has_router']:
-        return False
+        penalty += PENALTY_SCORE
     if mate_router == 2 and target['has_router']:
-        return False
+        penalty += PENALTY_SCORE
 
-    return True
+    return penalty
 
 
 # ============================================================
@@ -165,6 +180,14 @@ def _calculate_one_direction(from_user: dict, to_user: dict) -> float:
     return weighted_sum / weight_total
 
 
+def calculate_final_score(user_a: dict, user_b: dict) -> float:
+    """유사도 점수 - 감점 = 최종 점수"""
+    similarity = calculate_similarity(user_a, user_b)
+    penalty = calculate_basic_penalty(user_a, user_b)
+    final_score = max(0, similarity - penalty)  # 0점 미만 방지
+    return round(final_score, 2)
+
+
 def save_edge(r: redis.Redis, user_a: dict, user_b: dict, score: float):
     """Edge 저장 (key는 pk 오름차순)"""
     pk_a, pk_b = user_a['user_pk'], user_b['user_pk']
@@ -187,13 +210,15 @@ def save_edge(r: redis.Redis, user_a: dict, user_b: dict, score: float):
 # ============================================================
 
 def mark_as_calculated(r: redis.Redis, user_data: dict):
-    """유저의 edge_calculated를 true로 변경"""
-    user_data['edge_calculated'] = True
+    """유저의 edge_calculated를 true로 변경 (race condition 방지)"""
     redis_key = user_data['_redis_key']
 
-    # _redis_key는 내부용이므로 저장에서 제외
-    save_data = {k: v for k, v in user_data.items() if k != '_redis_key'}
-    r.set(redis_key, json.dumps(save_data))
+    # 최신 데이터를 다시 읽어서 edge_calculated만 변경
+    current_data = r.get(redis_key)
+    if current_data:
+        fresh_data = json.loads(current_data)
+        fresh_data['edge_calculated'] = True
+        r.set(redis_key, json.dumps(fresh_data))
 
 
 # ============================================================
@@ -209,12 +234,12 @@ def process_new_user(r: redis.Redis, new_user: dict, calculated_users: list[dict
         if existing['user_pk'] == user_pk:
             continue
 
-        # 2. 필터링
-        if not check_basic_filter(new_user, existing):
+        # 2. Hard Filter (성별만)
+        if not check_hard_filter(new_user, existing):
             continue
 
-        # 3. 유사도 계산 + edge 저장
-        score = calculate_similarity(new_user, existing)
+        # 3. 유사도 계산 + 감점 적용
+        score = calculate_final_score(new_user, existing)
         save_edge(r, new_user, existing, score)
         edge_count += 1
 
@@ -230,7 +255,6 @@ def run_polling():
 
     while True:
         try:
-            # 1. user-queue에서 모든 유저 조회
             all_users = get_all_queue_users(r)
 
             if not all_users:
@@ -238,7 +262,6 @@ def run_polling():
                 time.sleep(EDGE_POLLING_INTERVAL)
                 continue
 
-            # 1. 신규 유저 감지 (edge_calculated: false)
             new_users = get_new_users(all_users)
 
             if not new_users:
@@ -248,13 +271,10 @@ def run_polling():
 
             logger.info(f"Processing {len(new_users)} new user(s)")
 
-            # 기존 유저 목록
             calculated_users = get_calculated_users(all_users)
 
-            # 신규 유저 순차 처리
             for new_user in new_users:
                 process_new_user(r, new_user, calculated_users)
-                # 처리된 유저를 기존 목록에 추가 (다음 신규 유저와도 edge 계산)
                 calculated_users.append(new_user)
 
         except redis.RedisError as e:
