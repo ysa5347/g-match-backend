@@ -10,31 +10,29 @@ urlpatterns = [
     # Auth main
     path('auth', views.auth_main, name='auth_main'),
 
-    # Auth - Login/Logout
-    path('auth/login', views.login_view, name='login'),
+    # GIST IdP OIDC endpoints
+    path('auth/oidc/login', views.oidc_login_view, name='oidc_login'),
+    path('auth/oidc/callback', views.oidc_callback_view, name='oidc_callback'),
+
+    # Auth - Logout
     path('auth/logout', views.logout_view, name='logout'),
 
     # Auth - Registration main
     path('auth/registration', views.registration_main, name='registration_main'),
 
-    # Auth - Registration endpoints
-    path('auth/registration/email/verification-code', views.send_verification_code_view, name='send_verification_code'),
-    path('auth/registration/email/verification-code/verify', views.verify_code_view, name='verify_code'),
+    # Auth - Registration endpoints (OIDC 기반)
     path('auth/registration/agree', views.registration_agree_view, name='registration_agree'),
-    path('auth/registration/basic-info', views.registration_basic_info_view, name='registration_basic_info'),
-
-    # OAuth main
-    path('oauth', views.oauth_main, name='oauth_main'),
-
-    # OAuth endpoints (TODO)
-    # path('oauth/kakao', views.kakao_oauth, name='kakao_oauth'),
-    # path('oauth/kakao/callback', views.kakao_callback, name='kakao_callback'),
-    # path('oauth/naver', views.naver_oauth, name='naver_oauth'),
-    # path('oauth/naver/callback', views.naver_callback, name='naver_callback'),
 
     # User info endpoints
     path('info', views.user_info_view, name='user_info'),
 
-    # Withdrawal (TODO)
-    # path('withdrawal', views.withdrawal, name='withdrawal'),
+    # ============================================
+    # [DEPRECATED] 기존 API (하위 호환성)
+    # 410 Gone 응답 반환
+    # ============================================
+    path('auth/login', views.login_view, name='login'),  # Deprecated
+    path('auth/registration/email/verification-code', views.send_verification_code_view, name='send_verification_code'),  # Deprecated
+    path('auth/registration/email/verification-code/verify', views.verify_code_view, name='verify_code'),  # Deprecated
+    path('auth/registration/basic-info', views.registration_basic_info_view, name='registration_basic_info'),  # Deprecated
+    path('oauth', views.oauth_main, name='oauth_main'),  # Deprecated
 ]

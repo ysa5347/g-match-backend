@@ -1,6 +1,7 @@
 from django.http import JsonResponse
 from django.views.decorators.http import require_http_methods
 from django.views.decorators.csrf import csrf_exempt
+from django.shortcuts import redirect
 from rest_framework.decorators import api_view
 from rest_framework.response import Response
 from rest_framework import status
@@ -9,161 +10,231 @@ from drf_yasg import openapi
 
 from .models import CustomUser, Agreement
 from .serializers import (
-    EmailVerificationSerializer,
-    CodeVerificationSerializer,
     AgreementSerializer,
-    UserRegistrationSerializer,
-    UserLoginSerializer,
     UserInfoSerializer,
-    UserUpdateSerializer
+    UserUpdateSerializer,
+    OIDCCallbackSerializer,
+    OIDCUserInfoSerializer,
 )
 from .utils.redis_utils import (
     generate_reg_sid,
     generate_registration_token,
-    generate_verification_code,
     store_registration_session,
     validate_registration_session,
-    store_verification_code,
-    validate_verification_code,
-    check_email_send_limit,
-    increment_email_send_count,
-    check_login_attempts,
-    increment_login_attempts,
-    reset_login_attempts
 )
-from .utils.email_utils import send_verification_email
+from .utils.oidc_utils import (
+    build_authorization_url,
+    process_oidc_callback,
+    OIDCError,
+    OIDCValidationError,
+    OIDCTokenError,
+)
 from .decorators import login_required, registration_step_required
 
 
 # ============================================
-# 회원가입 API
+# GIST IdP OIDC 인증 API
 # ============================================
 
 @swagger_auto_schema(
-    method='post',
-    operation_summary='이메일 인증코드 발송',
-    operation_description='GIST 이메일로 인증코드를 발송합니다. 약관 동의 후 사용 가능합니다.',
-    request_body=EmailVerificationSerializer,
+    method='get',
+    operation_summary='GIST IdP 로그인/회원가입 시작',
+    operation_description='''
+    GIST IdP OIDC 인증을 시작합니다.
+    이 엔드포인트는 GIST IdP 로그인 페이지로 리다이렉트합니다.
+
+    회원가입과 로그인 모두 이 엔드포인트를 통해 처리됩니다:
+    - 기존 사용자: 로그인 처리
+    - 신규 사용자: 회원가입 플로우 시작 (약관 동의 필요)
+    ''',
     manual_parameters=[
-        openapi.Parameter('X-Registration-Token', openapi.IN_HEADER, description='회원가입 토큰', type=openapi.TYPE_STRING, required=True),
+        openapi.Parameter(
+            'redirect_after',
+            openapi.IN_QUERY,
+            description='인증 완료 후 리다이렉트할 클라이언트 URL',
+            type=openapi.TYPE_STRING,
+            required=False
+        ),
     ],
     responses={
-        200: openapi.Response('인증코드 발송 성공'),
-        400: openapi.Response('잘못된 요청'),
-        429: openapi.Response('발송 제한 초과')
+        302: openapi.Response('GIST IdP 로그인 페이지로 리다이렉트'),
+        200: openapi.Response('Authorization URL 반환 (AJAX 요청 시)')
     }
 )
-@api_view(['POST'])
-@registration_step_required('agreed')
-def send_verification_code_view(request):
+@api_view(['GET'])
+def oidc_login_view(request):
     """
-    이메일 인증코드 발송
-    POST /api/v1alpha1/account/auth/registration/email/verification-code
+    GIST IdP OIDC 인증 시작
+    GET /api/v1alpha1/account/auth/oidc/login
     """
-    serializer = EmailVerificationSerializer(data=request.data)
+    redirect_after = request.GET.get('redirect_after')
 
-    if not serializer.is_valid():
-        return Response({
-            'success': False,
-            'errors': serializer.errors
-        }, status=status.HTTP_400_BAD_REQUEST)
+    # Authorization URL 생성
+    auth_data = build_authorization_url(redirect_after)
 
-    email = serializer.validated_data['email']
-
-    # Rate limiting 확인
-    can_send, reason = check_email_send_limit(email)
-    if not can_send:
-        return Response({
-            'success': False,
-            'error': 'Rate limit exceeded',
-            'message': reason
-        }, status=status.HTTP_429_TOO_MANY_REQUESTS)
-
-    # 인증코드 생성 및 저장
-    code = generate_verification_code()
-    reg_sid = request.COOKIES.get('reg_sid')
-    store_verification_code(email, code, reg_sid)
-
-    # 이메일 발송
-    if send_verification_email(email, code):
-        increment_email_send_count(email)
+    # AJAX 요청인 경우 JSON 응답
+    if request.headers.get('Accept') == 'application/json':
         return Response({
             'success': True,
-            'message': '인증코드가 이메일로 발송되었습니다.',
-            'email': email
+            'authorization_url': auth_data['authorization_url']
         }, status=status.HTTP_200_OK)
-    else:
-        return Response({
-            'success': False,
-            'error': 'Email send failed',
-            'message': '이메일 발송에 실패했습니다.'
-        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+    # 일반 요청인 경우 리다이렉트
+    return redirect(auth_data['authorization_url'])
 
 
 @swagger_auto_schema(
-    method='post',
-    operation_summary='이메일 인증코드 검증',
-    operation_description='발송된 인증코드를 검증합니다.',
-    request_body=CodeVerificationSerializer,
+    method='get',
+    operation_summary='GIST IdP OIDC Callback',
+    operation_description='''
+    GIST IdP에서 인증 후 리다이렉트되는 콜백 엔드포인트입니다.
+
+    처리 흐름:
+    1. Authorization code와 state 검증
+    2. Token 교환 (code → tokens)
+    3. ID Token 검증 및 사용자 정보 추출
+    4. 기존 사용자: 로그인 처리
+    5. 신규 사용자: 회원가입 플로우 시작 (약관 동의 페이지로 이동)
+    ''',
     manual_parameters=[
-        openapi.Parameter('X-Registration-Token', openapi.IN_HEADER, description='회원가입 토큰', type=openapi.TYPE_STRING, required=True),
+        openapi.Parameter('code', openapi.IN_QUERY, description='Authorization code', type=openapi.TYPE_STRING),
+        openapi.Parameter('state', openapi.IN_QUERY, description='State parameter', type=openapi.TYPE_STRING),
+        openapi.Parameter('error', openapi.IN_QUERY, description='Error code (if any)', type=openapi.TYPE_STRING),
+        openapi.Parameter('error_description', openapi.IN_QUERY, description='Error description', type=openapi.TYPE_STRING),
     ],
     responses={
-        200: openapi.Response('인증코드 검증 성공'),
-        400: openapi.Response('유효하지 않은 인증코드')
+        200: openapi.Response('인증 성공'),
+        400: openapi.Response('잘못된 요청'),
+        401: openapi.Response('인증 실패')
     }
 )
-@api_view(['POST'])
-@registration_step_required('agreed')
-def verify_code_view(request):
+@api_view(['GET'])
+def oidc_callback_view(request):
     """
-    인증코드 검증
-    POST /api/v1alpha1/account/auth/registration/email/verification-code/verify
-    """
-    serializer = CodeVerificationSerializer(data=request.data)
+    GIST IdP OIDC Callback 처리
+    GET /api/v1alpha1/account/auth/oidc/callback
 
+    처리 완료 후 F/E Auth Callback 페이지로 리다이렉트합니다.
+    """
+    from django.conf import settings as django_settings
+    from urllib.parse import urlencode
+
+    frontend_callback_url = django_settings.FRONTEND_AUTH_CALLBACK_URL
+
+    def redirect_to_frontend(params):
+        """F/E 콜백 URL로 리다이렉트"""
+        url = f"{frontend_callback_url}?{urlencode(params)}"
+        return redirect(url)
+
+    # 파라미터 검증
+    serializer = OIDCCallbackSerializer(data=request.GET)
     if not serializer.is_valid():
-        return Response({
-            'success': False,
-            'errors': serializer.errors
-        }, status=status.HTTP_400_BAD_REQUEST)
+        return redirect_to_frontend({
+            'error': 'Invalid callback parameters',
+        })
 
-    email = serializer.validated_data['email']
     code = serializer.validated_data['code']
-    reg_sid = request.COOKIES.get('reg_sid')
+    state = serializer.validated_data['state']
 
-    # 인증코드 검증
-    if validate_verification_code(email, code, reg_sid):
-        # 기존 세션 데이터 가져오기
-        registration_token = request.headers.get('X-Registration-Token')
-        _, session_data = validate_registration_session(reg_sid, token=registration_token)
+    try:
+        # OIDC 콜백 처리
+        result = process_oidc_callback(code, state)
+        user_info = result['user_info']
+        redirect_after = result.get('redirect_after')
 
-        # 새로운 registration_token 생성
-        new_token = generate_registration_token()
+        # 사용자 정보 검증
+        user_info_serializer = OIDCUserInfoSerializer(data=user_info)
+        if not user_info_serializer.is_valid():
+            return redirect_to_frontend({
+                'error': 'Invalid user info from IdP',
+            })
 
-        # 세션 업데이트
+        # 기존 사용자 확인
+        gist_id = user_info['sub']
+        email = user_info['email']
+
+        # gist_id 또는 email로 기존 사용자 조회
+        user = CustomUser.objects.filter(gist_id=gist_id).first()
+        if not user:
+            user = CustomUser.objects.filter(email=email).first()
+
+        if user:
+            # 기존 사용자: 로그인 처리
+            # gist_id 연결 (기존 이메일 사용자인 경우)
+            if not user.gist_id:
+                user.gist_id = gist_id
+
+            # IdP 정보로 업데이트
+            user.name = user_info.get('name') or user.name
+            user.student_id = user_info.get('student_id') or user.student_id
+            user.phone_number = user_info.get('phone_number') or user.phone_number
+            user.save()
+
+            # 세션 생성
+            request.session['user_id'] = str(user.uid)
+            request.session.cycle_key()
+
+            # F/E로 리다이렉트 (기존 사용자)
+            params = {'is_new_user': 'false'}
+            if redirect_after:
+                params['redirect_after'] = redirect_after
+
+            return redirect_to_frontend(params)
+
+        # 신규 사용자: 회원가입 플로우 시작
+        reg_sid = generate_reg_sid()
+        registration_token = generate_registration_token()
+
+        # OIDC 사용자 정보를 세션에 저장
         store_registration_session(
             reg_sid,
             data={
-                **session_data['data'],
-                'email': email
+                'oidc_user_info': user_info
             },
-            step='email_verified',
-            token=new_token
+            step='oidc_authenticated',
+            token=registration_token
         )
 
-        return Response({
-            'success': True,
-            'message': '이메일 인증이 완료되었습니다.',
-            'registration_token': new_token
-        }, status=status.HTTP_200_OK)
-    else:
-        return Response({
-            'success': False,
-            'error': 'Invalid verification code',
-            'message': '유효하지 않은 인증코드입니다.'
-        }, status=status.HTTP_400_BAD_REQUEST)
+        # F/E로 리다이렉트 (신규 사용자)
+        params = {
+            'is_new_user': 'true',
+            'registration_token': registration_token,
+        }
+        if redirect_after:
+            params['redirect_after'] = redirect_after
 
+        response = redirect_to_frontend(params)
+
+        # reg_sid 쿠키 설정
+        response.set_cookie(
+            key='reg_sid',
+            value=reg_sid,
+            max_age=1800,  # 30분
+            httponly=True,
+            samesite='Lax'
+        )
+
+        return response
+
+    except OIDCValidationError as e:
+        return redirect_to_frontend({
+            'error': f'OIDC validation failed: {str(e)}',
+        })
+
+    except OIDCTokenError as e:
+        return redirect_to_frontend({
+            'error': f'Token exchange failed: {str(e)}',
+        })
+
+    except OIDCError as e:
+        return redirect_to_frontend({
+            'error': f'OIDC error: {str(e)}',
+        })
+
+
+# ============================================
+# 회원가입 API (OIDC 기반)
+# ============================================
 
 @swagger_auto_schema(
     method='get',
@@ -173,25 +244,27 @@ def verify_code_view(request):
 )
 @swagger_auto_schema(
     method='post',
-    operation_summary='약관 동의',
-    operation_description='서비스 이용약관 및 개인정보 처리방침에 동의하고 회원가입을 시작합니다.',
+    operation_summary='약관 동의 및 회원가입 완료',
+    operation_description='''
+    서비스 이용약관 및 개인정보 처리방침에 동의하고 회원가입을 완료합니다.
+
+    GIST IdP OIDC 인증 후 호출해야 합니다.
+    사용자 정보(이메일, 이름, 학번, 전화번호)는 GIST IdP에서 제공받은 정보를 사용합니다.
+    ''',
     request_body=AgreementSerializer,
+    manual_parameters=[
+        openapi.Parameter('X-Registration-Token', openapi.IN_HEADER, description='회원가입 토큰', type=openapi.TYPE_STRING, required=True),
+    ],
     responses={
-        200: openapi.Response('약관 동의 성공', openapi.Schema(
-            type=openapi.TYPE_OBJECT,
-            properties={
-                'success': openapi.Schema(type=openapi.TYPE_BOOLEAN),
-                'message': openapi.Schema(type=openapi.TYPE_STRING),
-                'registration_token': openapi.Schema(type=openapi.TYPE_STRING)
-            }
-        )),
-        400: openapi.Response('잘못된 요청')
+        201: openapi.Response('회원가입 성공'),
+        400: openapi.Response('잘못된 요청'),
+        401: openapi.Response('인증 필요')
     }
 )
 @api_view(['GET', 'POST'])
 def registration_agree_view(request):
     """
-    약관 동의
+    약관 동의 및 회원가입 완료
     GET/POST /api/v1alpha1/account/auth/registration/agree
     """
     if request.method == 'GET':
@@ -209,211 +282,88 @@ def registration_agree_view(request):
         }, status=status.HTTP_200_OK)
 
     elif request.method == 'POST':
-        serializer = AgreementSerializer(data=request.data)
+        # OIDC 인증 세션 검증
+        reg_sid = request.COOKIES.get('reg_sid')
+        registration_token = request.headers.get('X-Registration-Token')
 
-        if not serializer.is_valid():
+        if not reg_sid or not registration_token:
             return Response({
                 'success': False,
-                'errors': serializer.errors
-            }, status=status.HTTP_400_BAD_REQUEST)
+                'error': 'Authentication required',
+                'message': 'GIST IdP 인증이 필요합니다.',
+                'login_url': '/api/v1alpha1/account/auth/oidc/login'
+            }, status=status.HTTP_401_UNAUTHORIZED)
 
-        # reg_sid 및 registration_token 생성
-        reg_sid = generate_reg_sid()
-        registration_token = generate_registration_token()
-
-        # 세션 저장
-        store_registration_session(
+        is_valid, session_data = validate_registration_session(
             reg_sid,
-            data={
-                'agreements': serializer.validated_data
-            },
-            step='agreed',
+            required_step='oidc_authenticated',
             token=registration_token
         )
 
+        if not is_valid:
+            return Response({
+                'success': False,
+                'error': 'Invalid or expired session',
+                'message': '세션이 만료되었습니다. GIST IdP 인증을 다시 진행해주세요.',
+                'login_url': '/api/v1alpha1/account/auth/oidc/login'
+            }, status=status.HTTP_401_UNAUTHORIZED)
+
+        # 약관 동의 검증
+        agreement_serializer = AgreementSerializer(data=request.data)
+        if not agreement_serializer.is_valid():
+            return Response({
+                'success': False,
+                'errors': agreement_serializer.errors
+            }, status=status.HTTP_400_BAD_REQUEST)
+
+        # OIDC 사용자 정보 가져오기
+        oidc_user_info = session_data['data']['oidc_user_info']
+
+        # 사용자 생성
+        user, created = CustomUser.objects.get_or_create_oidc_user(oidc_user_info)
+
+        if not created:
+            # 이미 존재하는 사용자 (동시 요청 등)
+            return Response({
+                'success': False,
+                'error': 'User already exists',
+                'message': '이미 가입된 사용자입니다.'
+            }, status=status.HTTP_400_BAD_REQUEST)
+
+        # 약관 동의 저장
+        Agreement.objects.create(
+            user=user,
+            **agreement_serializer.validated_data
+        )
+
+        # 세션 삭제 (회원가입 완료)
+        from django.core.cache import cache
+        cache.delete(f"registration:{reg_sid}")
+
+        # 로그인 세션 생성
+        request.session['user_id'] = str(user.uid)
+        request.session.cycle_key()
+
         response = Response({
             'success': True,
-            'message': '약관 동의가 완료되었습니다.',
-            'registration_token': registration_token
-        }, status=status.HTTP_200_OK)
+            'message': '회원가입이 완료되었습니다.',
+            'user': {
+                'uid': str(user.uid),
+                'email': user.email,
+                'name': user.name,
+                'student_id': user.student_id
+            }
+        }, status=status.HTTP_201_CREATED)
 
-        # reg_sid 쿠키 설정
-        response.set_cookie(
-            key='reg_sid',
-            value=reg_sid,
-            max_age=1800,  # 30분
-            httponly=True,
-            samesite='Lax'
-        )
+        # reg_sid 쿠키 삭제
+        response.delete_cookie('reg_sid')
 
         return response
 
 
-@swagger_auto_schema(
-    method='post',
-    operation_summary='기본정보 등록 및 회원가입 완료',
-    operation_description='사용자 기본정보를 등록하고 회원가입을 완료합니다.',
-    request_body=UserRegistrationSerializer,
-    manual_parameters=[
-        openapi.Parameter('X-Registration-Token', openapi.IN_HEADER, description='회원가입 토큰', type=openapi.TYPE_STRING, required=True),
-    ],
-    responses={
-        201: openapi.Response('회원가입 성공'),
-        400: openapi.Response('잘못된 요청')
-    }
-)
-@api_view(['POST'])
-@registration_step_required('email_verified')
-def registration_basic_info_view(request):
-    """
-    기본정보 등록 및 회원가입 완료
-    POST /api/v1alpha1/account/auth/registration/basic-info
-    """
-    # 기존 세션 데이터 가져오기
-    reg_sid = request.COOKIES.get('reg_sid')
-    registration_token = request.headers.get('X-Registration-Token')
-    _, session_data = validate_registration_session(reg_sid, token=registration_token)
-
-    email = session_data['data']['email']
-    agreements = session_data['data']['agreements']
-
-    # 회원가입 데이터 병합
-    registration_data = {
-        **request.data,
-        'email': email
-    }
-
-    serializer = UserRegistrationSerializer(data=registration_data)
-
-    if not serializer.is_valid():
-        return Response({
-            'success': False,
-            'errors': serializer.errors
-        }, status=status.HTTP_400_BAD_REQUEST)
-
-    # 사용자 생성
-    user = serializer.save()
-
-    # 약관 동의 저장
-    Agreement.objects.create(
-        user=user,
-        **agreements
-    )
-
-    # 세션 삭제 (회원가입 완료)
-    from django.core.cache import cache
-    cache.delete(f"registration:{reg_sid}")
-
-    response = Response({
-        'success': True,
-        'message': '회원가입이 완료되었습니다.',
-        'user': {
-            'uid': str(user.uid),
-            'email': user.email,
-            'name': user.name
-        }
-    }, status=status.HTTP_201_CREATED)
-
-    # reg_sid 쿠키 삭제
-    response.delete_cookie('reg_sid')
-
-    return response
-
-
 # ============================================
-# 로그인/로그아웃 API
+# 로그아웃 API
 # ============================================
-
-@swagger_auto_schema(
-    method='get',
-    operation_summary='로그인 페이지',
-    operation_description='로그인 페이지 정보를 반환합니다.',
-    responses={200: openapi.Response('로그인 페이지')}
-)
-@swagger_auto_schema(
-    method='post',
-    operation_summary='로그인',
-    operation_description='이메일과 비밀번호로 로그인합니다.',
-    request_body=UserLoginSerializer,
-    responses={
-        200: openapi.Response('로그인 성공'),
-        401: openapi.Response('인증 실패'),
-        429: openapi.Response('로그인 시도 횟수 초과')
-    }
-)
-@api_view(['GET', 'POST'])
-def login_view(request):
-    """
-    로그인
-    GET/POST /api/v1alpha1/account/auth/login
-    """
-    if request.method == 'GET':
-        # 로그인 페이지 정보 반환
-        return Response({
-            'success': True,
-            'message': 'Login page'
-        }, status=status.HTTP_200_OK)
-
-    elif request.method == 'POST':
-        serializer = UserLoginSerializer(data=request.data)
-
-        if not serializer.is_valid():
-            return Response({
-                'success': False,
-                'errors': serializer.errors
-            }, status=status.HTTP_400_BAD_REQUEST)
-
-        email = serializer.validated_data['email']
-        password = serializer.validated_data['password']
-
-        # 로그인 시도 횟수 확인
-        is_locked, attempts = check_login_attempts(email)
-        if is_locked:
-            return Response({
-                'success': False,
-                'error': 'Account locked',
-                'message': f'로그인 시도 횟수를 초과했습니다. 30분 후 다시 시도해주세요.'
-            }, status=status.HTTP_429_TOO_MANY_REQUESTS)
-
-        # 사용자 인증
-        try:
-            user = CustomUser.objects.get(email=email)
-            if user.check_password(password):
-                # 로그인 성공
-                reset_login_attempts(email)
-
-                # 세션 생성
-                request.session['user_id'] = str(user.uid)
-                request.session.cycle_key()  # 세션 고정 공격 방지
-
-                return Response({
-                    'success': True,
-                    'message': '로그인에 성공했습니다.',
-                    'user': {
-                        'uid': str(user.uid),
-                        'email': user.email,
-                        'name': user.name
-                    }
-                }, status=status.HTTP_200_OK)
-            else:
-                # 비밀번호 불일치
-                increment_login_attempts(email)
-                return Response({
-                    'success': False,
-                    'error': 'Invalid credentials',
-                    'message': '이메일 또는 비밀번호가 올바르지 않습니다.',
-                    'attempts_left': 5 - (attempts + 1)
-                }, status=status.HTTP_401_UNAUTHORIZED)
-
-        except CustomUser.DoesNotExist:
-            # 사용자 없음
-            increment_login_attempts(email)
-            return Response({
-                'success': False,
-                'error': 'Invalid credentials',
-                'message': '이메일 또는 비밀번호가 올바르지 않습니다.'
-            }, status=status.HTTP_401_UNAUTHORIZED)
-
 
 @swagger_auto_schema(
     method='post',
@@ -455,7 +405,12 @@ def logout_view(request):
 @swagger_auto_schema(
     method='post',
     operation_summary='사용자 정보 수정',
-    operation_description='현재 로그인한 사용자의 정보를 수정합니다.',
+    operation_description='''
+    현재 로그인한 사용자의 정보를 수정합니다.
+
+    Note: email, name, student_id, phone_number는 GIST IdP에서 관리하므로
+    수정할 수 없습니다. 해당 정보 변경은 GIST IdP에서 진행해주세요.
+    ''',
     request_body=UserUpdateSerializer,
     responses={
         200: openapi.Response('사용자 정보 수정 성공'),
@@ -466,7 +421,12 @@ def logout_view(request):
 @swagger_auto_schema(
     method='put',
     operation_summary='사용자 정보 수정',
-    operation_description='현재 로그인한 사용자의 정보를 수정합니다.',
+    operation_description='''
+    현재 로그인한 사용자의 정보를 수정합니다.
+
+    Note: email, name, student_id, phone_number는 GIST IdP에서 관리하므로
+    수정할 수 없습니다. 해당 정보 변경은 GIST IdP에서 진행해주세요.
+    ''',
     request_body=UserUpdateSerializer,
     responses={
         200: openapi.Response('사용자 정보 수정 성공'),
@@ -531,7 +491,6 @@ def account_main(request):
         'version': 'v1alpha1',
         'endpoints': {
             'auth': '/api/v1alpha1/account/auth',
-            'oauth': '/api/v1alpha1/account/oauth',
             'user_info': '/api/v1alpha1/account/info'
         }
     }, status=status.HTTP_200_OK)
@@ -553,33 +512,12 @@ def auth_main(request):
         'success': True,
         'service': 'Auth',
         'version': 'v1alpha1',
+        'description': 'GIST IdP OIDC 기반 인증',
         'endpoints': {
-            'login': '/api/v1alpha1/account/auth/login',
+            'login': '/api/v1alpha1/account/auth/oidc/login',
+            'callback': '/api/v1alpha1/account/auth/oidc/callback',
             'logout': '/api/v1alpha1/account/auth/logout',
             'registration': '/api/v1alpha1/account/auth/registration'
-        }
-    }, status=status.HTTP_200_OK)
-
-
-@swagger_auto_schema(
-    method='get',
-    operation_summary='OAuth 서비스 메인',
-    operation_description='OAuth 서비스의 엔드포인트 목록을 반환합니다.',
-    responses={200: openapi.Response('엔드포인트 목록')}
-)
-@api_view(['GET'])
-def oauth_main(request):
-    """
-    OAuth 서비스 메인
-    GET /api/v1alpha1/account/oauth
-    """
-    return Response({
-        'success': True,
-        'service': 'OAuth',
-        'version': 'v1alpha1',
-        'endpoints': {
-            'kakao': '/api/v1alpha1/account/oauth/kakao',
-            'naver': '/api/v1alpha1/account/oauth/naver'
         }
     }, status=status.HTTP_200_OK)
 
@@ -600,16 +538,100 @@ def registration_main(request):
         'success': True,
         'service': 'Registration',
         'version': 'v1alpha1',
+        'description': 'GIST IdP OIDC 기반 회원가입',
         'flow': [
-            '1. agree',
-            '2. send_verification_code',
-            '3. verify_code',
-            '4. basic_info'
+            '1. GIST IdP 로그인 (/auth/oidc/login)',
+            '2. OIDC Callback 처리 (/auth/oidc/callback)',
+            '3. 약관 동의 및 회원가입 완료 (/auth/registration/agree)'
         ],
         'endpoints': {
-            'agree': '/api/v1alpha1/account/auth/registration/agree',
-            'send_verification_code': '/api/v1alpha1/account/auth/registration/email/verification-code',
-            'verify_code': '/api/v1alpha1/account/auth/registration/email/verification-code/verify',
-            'basic_info': '/api/v1alpha1/account/auth/registration/basic-info'
-        }
+            'oidc_login': '/api/v1alpha1/account/auth/oidc/login',
+            'oidc_callback': '/api/v1alpha1/account/auth/oidc/callback',
+            'agree': '/api/v1alpha1/account/auth/registration/agree'
+        },
+        'note': '사용자 정보(이메일, 이름, 학번, 전화번호)는 GIST IdP에서 제공받습니다.'
     }, status=status.HTTP_200_OK)
+
+
+# ============================================
+# [DEPRECATED] 기존 API (하위 호환성)
+# ============================================
+
+@api_view(['GET', 'POST'])
+def login_view(request):
+    """
+    [DEPRECATED] 기존 로그인 API
+
+    이 API는 더 이상 사용되지 않습니다.
+    GIST IdP OIDC 로그인을 사용해주세요: /api/v1alpha1/account/auth/oidc/login
+    """
+    return Response({
+        'success': False,
+        'error': 'Deprecated',
+        'message': '이 API는 더 이상 사용되지 않습니다. GIST IdP 로그인을 사용해주세요.',
+        'login_url': '/api/v1alpha1/account/auth/oidc/login'
+    }, status=status.HTTP_410_GONE)
+
+
+@api_view(['POST'])
+def send_verification_code_view(request):
+    """
+    [DEPRECATED] 이메일 인증코드 발송 API
+
+    이 API는 더 이상 사용되지 않습니다.
+    GIST IdP OIDC 인증을 사용해주세요.
+    """
+    return Response({
+        'success': False,
+        'error': 'Deprecated',
+        'message': '이메일 인증은 GIST IdP를 통해 처리됩니다.',
+        'login_url': '/api/v1alpha1/account/auth/oidc/login'
+    }, status=status.HTTP_410_GONE)
+
+
+@api_view(['POST'])
+def verify_code_view(request):
+    """
+    [DEPRECATED] 인증코드 검증 API
+
+    이 API는 더 이상 사용되지 않습니다.
+    GIST IdP OIDC 인증을 사용해주세요.
+    """
+    return Response({
+        'success': False,
+        'error': 'Deprecated',
+        'message': '이메일 인증은 GIST IdP를 통해 처리됩니다.',
+        'login_url': '/api/v1alpha1/account/auth/oidc/login'
+    }, status=status.HTTP_410_GONE)
+
+
+@api_view(['POST'])
+def registration_basic_info_view(request):
+    """
+    [DEPRECATED] 기본정보 등록 API
+
+    이 API는 더 이상 사용되지 않습니다.
+    사용자 정보는 GIST IdP에서 제공받습니다.
+    """
+    return Response({
+        'success': False,
+        'error': 'Deprecated',
+        'message': '사용자 정보는 GIST IdP에서 제공받습니다. GIST IdP 로그인을 사용해주세요.',
+        'login_url': '/api/v1alpha1/account/auth/oidc/login'
+    }, status=status.HTTP_410_GONE)
+
+
+@api_view(['GET'])
+def oauth_main(request):
+    """
+    [DEPRECATED] OAuth 서비스 메인
+
+    Kakao/Naver OAuth는 더 이상 사용되지 않습니다.
+    GIST IdP OIDC만 지원합니다.
+    """
+    return Response({
+        'success': False,
+        'error': 'Deprecated',
+        'message': 'Kakao/Naver OAuth는 더 이상 지원되지 않습니다. GIST IdP OIDC를 사용해주세요.',
+        'login_url': '/api/v1alpha1/account/auth/oidc/login'
+    }, status=status.HTTP_410_GONE)

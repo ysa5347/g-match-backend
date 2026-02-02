@@ -6,11 +6,18 @@ from django.core.validators import EmailValidator
 
 class CustomUserManager(BaseUserManager):
     def create_user(self, email, password=None, **extra_fields):
+        """
+        OIDC 사용자 생성 (password는 선택적)
+        GIST IdP를 통해 인증하므로 password가 없을 수 있음
+        """
         if not email:
             raise ValueError('The Email field must be set')
         email = self.normalize_email(email)
         user = self.model(email=email, **extra_fields)
-        user.set_password(password)
+        if password:
+            user.set_password(password)
+        else:
+            user.set_unusable_password()  # OIDC 사용자는 비밀번호 없음
         user.save(using=self._db)
         return user
 
@@ -26,6 +33,60 @@ class CustomUserManager(BaseUserManager):
 
         return self.create_user(email, password, **extra_fields)
 
+    def get_or_create_oidc_user(self, oidc_user_info):
+        """
+        GIST IdP OIDC로부터 받은 사용자 정보로 사용자 조회 또는 생성
+
+        Args:
+            oidc_user_info: dict containing:
+                - sub: GIST IdP 고유 ID
+                - email: GIST 이메일
+                - name: 사용자 이름
+                - student_id: 학번
+                - phone_number: 전화번호
+
+        Returns:
+            tuple: (user, created)
+        """
+        gist_id = oidc_user_info.get('sub')
+        email = oidc_user_info.get('email')
+
+        # gist_id로 먼저 조회
+        try:
+            user = self.get(gist_id=gist_id)
+            # 기존 사용자: IdP 정보로 업데이트
+            user.email = email
+            user.name = oidc_user_info.get('name', user.name)
+            user.student_id = oidc_user_info.get('student_id', user.student_id)
+            user.phone_number = oidc_user_info.get('phone_number', user.phone_number)
+            user.save()
+            return user, False
+        except self.model.DoesNotExist:
+            pass
+
+        # 이메일로 조회 (기존 사용자가 있을 수 있음)
+        try:
+            user = self.get(email=email)
+            # 기존 이메일 사용자에 gist_id 연결
+            user.gist_id = gist_id
+            user.name = oidc_user_info.get('name', user.name)
+            user.student_id = oidc_user_info.get('student_id', user.student_id)
+            user.phone_number = oidc_user_info.get('phone_number', user.phone_number)
+            user.save()
+            return user, False
+        except self.model.DoesNotExist:
+            pass
+
+        # 새 사용자 생성
+        user = self.create_user(
+            email=email,
+            gist_id=gist_id,
+            name=oidc_user_info.get('name', ''),
+            student_id=oidc_user_info.get('student_id'),
+            phone_number=oidc_user_info.get('phone_number'),
+        )
+        return user, True
+
 
 class CustomUser(AbstractBaseUser, PermissionsMixin):
     uid = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
@@ -35,12 +96,21 @@ class CustomUser(AbstractBaseUser, PermissionsMixin):
         help_text='GIST email address (@gist.ac.kr)'
     )
 
-    # Basic Information
+    # GIST IdP OIDC identifier (sub claim)
+    gist_id = models.CharField(
+        max_length=255,
+        unique=True,
+        null=True,
+        blank=True,
+        help_text='GIST IdP OIDC subject identifier'
+    )
+
+    # Basic Information (managed by GIST IdP)
     name = models.CharField(max_length=100)
     student_id = models.CharField(max_length=20, blank=True, null=True)
     phone_number = models.CharField(max_length=20, blank=True, null=True)
 
-    # Profile Information
+    # Profile Information (managed by our service)
     birth_year = models.IntegerField(blank=True, null=True)
     gender = models.CharField(
         max_length=1,
@@ -53,10 +123,6 @@ class CustomUser(AbstractBaseUser, PermissionsMixin):
     # Privacy Settings
     is_age_public = models.BooleanField(default=True)
     is_house_public = models.BooleanField(default=True)
-
-    # OAuth Fields
-    kakao_id = models.CharField(max_length=100, blank=True, null=True, unique=True)
-    naver_id = models.CharField(max_length=100, blank=True, null=True, unique=True)
 
     # Django Required Fields
     is_active = models.BooleanField(default=True)
@@ -80,6 +146,11 @@ class CustomUser(AbstractBaseUser, PermissionsMixin):
     @property
     def is_gist_email(self):
         return self.email.endswith('@gist.ac.kr')
+
+    @property
+    def is_oidc_user(self):
+        """GIST IdP OIDC로 인증된 사용자인지 확인"""
+        return bool(self.gist_id)
 
 
 class Agreement(models.Model):

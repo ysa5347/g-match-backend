@@ -16,7 +16,7 @@ services:
       - .env
     environment:
       - DEBUG=True
-      - DB_HOST=db
+      - ACC_DB_HOST=db
       - REDIS_HOST=redis
     depends_on:
       db:
@@ -33,10 +33,10 @@ services:
     image: mysql:8.0
     container_name: g-match-db-dev
     environment:
-      MYSQL_DATABASE: ${DB_NAME:-g_match}
-      MYSQL_USER: ${DB_USER:-django-server}
-      MYSQL_PASSWORD: ${DB_PASSWORD}
-      MYSQL_ROOT_PASSWORD: ${DB_ROOT_PASSWORD}
+      MYSQL_DATABASE: ${ACC_DB_NAME:-g_match}
+      MYSQL_USER: ${ACC_DB_USER:-django-server}
+      MYSQL_PASSWORD: ${ACC_DB_PASSWORD}
+      MYSQL_ROOT_PASSWORD: ${ACC_DB_ROOT_PASSWORD}
     volumes:
       - mysql-dev-data:/var/lib/mysql
     ports:
