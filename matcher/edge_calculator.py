@@ -72,10 +72,8 @@ def check_hard_filter(user_a: dict, user_b: dict) -> bool:
     if basic_a['gender'] != basic_b['gender']:
         return False
 
-    # 흡연자는 양방향 고려
-    if basic_a.get('mate_smoker', 0) == 0 and basic_b.get('is_smoker', False):
-        return False
-    if basic_b.get('mate_smoker', 0) == 0 and basic_a.get('is_smoker', False):
+    # 흡연 여부가 같아야 매칭
+    if basic_a.get('is_smoker', False) != basic_b.get('is_smoker', False):
         return False
 
     return True
