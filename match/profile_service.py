@@ -81,26 +81,26 @@ class InsightService:
 
         # 1. 생활 리듬 (Time)
         avg_time = (self._get_val('time_bed') + self._get_val('time_wake')) / 2
-        add_candidate("얼리버드", 6 - avg_time, ['time_bed', 'time_wake'])
-        add_candidate("올빼미", avg_time, ['time_bed', 'time_wake'])
-        add_candidate("알람몬스터", self._get_val('time_alarm'), 'time_alarm')
-        add_candidate("밤샘러", self._get_val('time_night'), 'time_night')
+        add_candidate("미라클모닝", 6 - avg_time, ['time_bed', 'time_wake'])
+        add_candidate("새벽감성", avg_time, ['time_bed', 'time_wake'])
+        add_candidate("알람지옥", self._get_val('time_alarm'), 'time_alarm')
+        add_candidate("프로밤샘러", self._get_val('time_night'), 'time_night')
 
         # 2. 공간 관리 (Clean)
         avg_clean = (self._get_val('clean_floor') + self._get_val('clean_trash') + self._get_val('clean_bath')) / 3
-        add_candidate("청소광", avg_clean, ['clean_floor', 'clean_trash', 'clean_bath'])
+        add_candidate("청소상태even", avg_clean, ['clean_floor', 'clean_trash', 'clean_bath'])
         add_candidate("자연인", 6 - avg_clean, ['clean_floor', 'clean_trash', 'clean_bath'])
         add_candidate("빨래요정", self._get_val('clean_laundry'), 'clean_laundry')
 
         # 3. 생활 습관 (Habit)
         val_sound = self._get_val('habit_sound')
-        add_candidate("닌자", 6 - val_sound, 'habit_sound')
-        add_candidate("스피커", val_sound, 'habit_sound')
-        add_candidate("암막커튼", self._get_val('habit_light'), 'habit_light')
-        add_candidate("먹방러", self._get_val('habit_food'), 'habit_food')
+        add_candidate("묵언수행", 6 - val_sound, 'habit_sound')
+        add_candidate("공사중", val_sound, 'habit_sound')
+        add_candidate("어둠의 자식", 6 - self._get_val('habit_light'), 'habit_light')
+        add_candidate("방구석 미슐랭", self._get_val('habit_food'), 'habit_food')
         val_temp = self._get_val('habit_temp')
-        add_candidate("북극곰", 6 - val_temp, 'habit_temp')
-        add_candidate("선인장", val_temp, 'habit_temp')
+        add_candidate("얼죽아 협회장", 6 - val_temp, 'habit_temp')
+        add_candidate("인간 난로", val_temp, 'habit_temp')
 
         # 4. 사회성 (Social)
         val_talk = self._get_val('social_talk')
@@ -109,8 +109,8 @@ class InsightService:
         score_homebody = ((6 - val_talk) + (6 - val_play) + val_alone) / 3
         add_candidate("자택경비원", score_homebody, ['social_talk', 'social_play', 'social_alone'])
         score_roommate_lover = (val_talk + val_play + (6 - val_alone)) / 3
-        add_candidate("룸메러버", score_roommate_lover, ['social_talk', 'social_play', 'social_alone'])
-        add_candidate("핵인싸", self._get_val('social_invite'), 'social_invite')
+        add_candidate("인간 리트리버", score_roommate_lover, ['social_talk', 'social_play', 'social_alone'])
+        add_candidate("만남의 광장", self._get_val('social_invite'), 'social_invite')
         add_candidate("기부천사", self._get_val('social_share'), 'social_share')
 
         # 5. 기타 (Etc)

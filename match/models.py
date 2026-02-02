@@ -27,12 +27,11 @@ class Property(models.Model):
     student_num = models.SmallIntegerField()
     gender = models.CharField(max_length=1)  # 'M' or 'F'
 
+    is_smoker = models.BooleanField()
+
     dorm_building = models.CharField(max_length=1)  # 'G', 'I' ...
     stay_period = models.SmallIntegerField()  # 최소 입주 기간을 나타내는 열 ...
-    is_smoker = models.BooleanField()
-    mate_smoker = models.SmallIntegerField(
-        choices=PreferenceChoice.choices
-    )
+
     has_fridge = models.BooleanField()
     mate_fridge = models.SmallIntegerField(
         choices=PreferenceChoice.choices

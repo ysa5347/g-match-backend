@@ -222,7 +222,6 @@ class MatchingViewSet(viewsets.ViewSet):
                 "dorm_building": property_obj.dorm_building,
                 "stay_period": property_obj.stay_period,
                 "is_smoker": property_obj.is_smoker,
-                "mate_smoker": property_obj.mate_smoker,
                 "has_fridge": property_obj.has_fridge,
                 "mate_fridge": property_obj.mate_fridge,
                 "has_router": property_obj.has_router,
