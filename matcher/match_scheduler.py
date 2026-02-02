@@ -23,7 +23,7 @@ from config import (
     REDIS_HOST, REDIS_PORT, REDIS_PASSWORD, REDIS_DB,
     DB_HOST, DB_PORT, DB_NAME, DB_USER, DB_PASSWORD,
     SCHEDULER_INTERVAL, MATCH_THRESHOLD, LOCK_KEY, LOCK_EXPIRE,
-    USER_QUEUE_PATTERN, USER_QUEUE_PREFIX, EDGE_PATTERN, EDGE_PREFIX
+    USER_QUEUE_PATTERN, USER_QUEUE_PREFIX, EDGE_PATTERN
 )
 
 logging.basicConfig(
@@ -63,10 +63,7 @@ def get_db_connection():
     )
 
 
-# ============================================================
-# 1. 락 획득/해제
-# ============================================================
-
+# == 1. 락 획득/해제 ==========================================
 def acquire_lock(r: redis.Redis, lock_value: str) -> bool:
     result = r.set(LOCK_KEY, lock_value, nx=True, ex=LOCK_EXPIRE)
     return result is True
@@ -78,10 +75,7 @@ def release_lock(r: redis.Redis, lock_value: str) -> bool:
     return result == 1
 
 
-# ============================================================
-# 2. Edge 및 유저 데이터 조회
-# ============================================================
-
+# == 2. Edge 및 유저 데이터 조회 ==============================
 MGET_BATCH_SIZE = 500
 
 def get_all_edges_and_users(r: redis.Redis) -> tuple[list[dict], dict[int, dict]]:
@@ -117,10 +111,7 @@ def get_all_edges_and_users(r: redis.Redis) -> tuple[list[dict], dict[int, dict]
     return edges, users
 
 
-# ============================================================
-# 3. 고아 edge 정리
-# ============================================================
-
+# == 3. 고아 edge 정리 =======================================
 def cleanup_orphan_edges(r: redis.Redis, edges: list[dict], valid_user_pks: set[int]) -> list[dict]:
     """
     user-queue에 없는 유저가 포함된 edge 삭제
@@ -132,11 +123,9 @@ def cleanup_orphan_edges(r: redis.Redis, edges: list[dict], valid_user_pks: set[
     for edge in edges:
         pk_a, pk_b = edge['user_a_pk'], edge['user_b_pk']
 
-        # 두 유저 모두 user-queue에 있어야 유효
         if pk_a in valid_user_pks and pk_b in valid_user_pks:
             valid_edges.append(edge)
         else:
-            # 고아 edge 삭제
             r.delete(edge['_key'])
             removed_count += 1
 
@@ -146,11 +135,7 @@ def cleanup_orphan_edges(r: redis.Redis, edges: list[dict], valid_user_pks: set[
     return valid_edges
 
 
-# ============================================================
-# 4. Greedy 매칭 알고리즘
-# ============================================================
-
-# priority 임계값: 이 이상이면 threshold 미달이어도 매칭 시도
+# == 4. Greedy 매칭 알고리즘 =================================
 PRIORITY_THRESHOLD = 10
 
 def find_matching_pairs(edges: list[dict], users: dict[int, dict], threshold: float) -> list[dict]:
@@ -177,10 +162,8 @@ def find_matching_pairs(edges: list[dict], users: dict[int, dict], threshold: fl
     if not valid_edges:
         return []
 
-    # 정렬: priority 합 DESC, score DESC
     valid_edges.sort(key=lambda e: (e['_priority_sum'], e['score']), reverse=True)
 
-    # Greedy 매칭
     matched_users = set()
     matched_pairs = []
 
@@ -194,10 +177,7 @@ def find_matching_pairs(edges: list[dict], users: dict[int, dict], threshold: fl
     return matched_pairs
 
 
-# ============================================================
-# 5. MatchHistory 저장 + user-queue 삭제
-# ============================================================
-
+# == 5. MatchHistory 저장 + user-queue 삭제 ==================
 def process_matched_pairs(r: redis.Redis, conn, matched_pairs: list[dict], users: dict[int, dict]) -> set[int]:
     """매칭된 쌍 처리: DB 저장 + user-queue 삭제 (edge 정리는 다음 사이클에서)"""
     removed_users = set()
@@ -211,7 +191,6 @@ def process_matched_pairs(r: redis.Redis, conn, matched_pairs: list[dict], users
             logger.warning(f"Missing user data: {user_a_pk} <-> {user_b_pk}")
             continue
 
-        # MatchHistory INSERT
         try:
             cursor.execute("""
                 INSERT INTO match_history (
@@ -230,7 +209,6 @@ def process_matched_pairs(r: redis.Redis, conn, matched_pairs: list[dict], users
             logger.error(f"Failed to save match history: {e}")
             continue
 
-        # user-queue 삭제
         r.delete(f"{USER_QUEUE_PREFIX}{user_a_pk}")
         r.delete(f"{USER_QUEUE_PREFIX}{user_b_pk}")
         removed_users.add(user_a_pk)
@@ -239,14 +217,10 @@ def process_matched_pairs(r: redis.Redis, conn, matched_pairs: list[dict], users
     conn.commit()
     cursor.close()
 
-    # 고아 edge 정리는 cleanup_orphan_edges()에서 다음 사이클 시작 시 처리
     return removed_users
 
 
-# ============================================================
-# 6. 남은 유저 priority 증가 (에이징)
-# ============================================================
-
+# == 6. 남은 유저 aging ======================================
 def increment_priorities(r: redis.Redis):
     updated = 0
     for key in r.keys(USER_QUEUE_PATTERN):
@@ -259,12 +233,8 @@ def increment_priorities(r: redis.Redis):
     logger.info(f"Incremented priority for {updated} users")
 
 
-# ============================================================
-# 메인 스케줄러 루프
-# ============================================================
-
+# == 메인 스케줄러 루프 ======================================
 def run_matching_cycle(r: redis.Redis, conn):
-    # 2. 데이터 조회
     edges, users = get_all_edges_and_users(r)
 
     if not users:
@@ -273,7 +243,6 @@ def run_matching_cycle(r: redis.Redis, conn):
 
     valid_user_pks = set(users.keys())
 
-    # 3. 고아 edge 정리 (매 사이클마다 실행)
     if edges:
         edges = cleanup_orphan_edges(r, edges, valid_user_pks)
 
@@ -282,7 +251,6 @@ def run_matching_cycle(r: redis.Redis, conn):
         increment_priorities(r)
         return
 
-    # 4-5. 매칭 쌍 찾기
     matched_pairs = find_matching_pairs(edges, users, MATCH_THRESHOLD)
     if not matched_pairs:
         logger.debug("No matching pairs found")
@@ -291,10 +259,8 @@ def run_matching_cycle(r: redis.Redis, conn):
 
     logger.info(f"Found {len(matched_pairs)} matching pair(s)")
 
-    # 6. 매칭 처리
     process_matched_pairs(r, conn, matched_pairs, users)
 
-    # 7. 에이징
     increment_priorities(r)
 
 
@@ -307,7 +273,6 @@ def run_scheduler():
         lock_value = str(uuid.uuid4())
 
         try:
-            # 1. 락 획득
             if not acquire_lock(r, lock_value):
                 logger.debug("Failed to acquire lock")
                 time.sleep(SCHEDULER_INTERVAL)
@@ -328,13 +293,12 @@ def run_scheduler():
         except Exception as e:
             logger.error(f"Unexpected error: {e}")
         finally:
-            # 8. 락 해제
             if release_lock(r, lock_value):
                 logger.debug("Lock released")
             else:
                 logger.warning("Failed to release lock (may have expired)")
 
-        # 처리 시간을 고려하여 sleep (정확히 SCHEDULER_INTERVAL 간격 유지)
+        # 처리 시간을 고려하여 sleep
         elapsed = time.time() - cycle_start
         sleep_time = max(0, SCHEDULER_INTERVAL - elapsed)
         if sleep_time > 0:

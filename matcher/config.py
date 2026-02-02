@@ -17,12 +17,12 @@ DB_PASSWORD = os.getenv('DB_PASSWORD', '')
 EDGE_POLLING_INTERVAL = int(os.getenv('EDGE_POLLING_INTERVAL', 10))  # 초
 
 # Match Scheduler 설정
-SCHEDULER_INTERVAL = int(os.getenv('SCHEDULER_INTERVAL', 60))  # 초 (1분)
-MATCH_THRESHOLD = float(os.getenv('MATCH_THRESHOLD', 50.0))  # 최소 매칭 점수
+SCHEDULER_INTERVAL = int(os.getenv('SCHEDULER_INTERVAL', 120))  # 초 (2분)
+MATCH_THRESHOLD = float(os.getenv('MATCH_THRESHOLD', 80.0))  # 최소 매칭 점수
 
 # Lock 설정
 LOCK_KEY = 'match:gc:lock'
-LOCK_EXPIRE = int(os.getenv('LOCK_EXPIRE', 60))  # 초
+LOCK_EXPIRE = int(os.getenv('LOCK_EXPIRE', 120))  # 초
 
 # Redis Key Patterns
 USER_QUEUE_PATTERN = 'match:user-queue:*'
