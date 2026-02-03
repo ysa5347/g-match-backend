@@ -22,6 +22,26 @@ class PropertySerializer(serializers.ModelSerializer):
             raise serializers.ValidationError("최소 입주 기간은 1학기에서 3학기 사이여야 합니다.")
         return value
 
+class ProfilePropertySerializer(serializers.ModelSerializer):
+    """프로필 표시용 Property 시리얼라이저 (민감정보 제외)"""
+    student_id = serializers.SerializerMethodField()
+
+    class Meta:
+        model = Property
+        exclude = ['property_id', 'user_id', 'created_at', 'match_status']
+
+    def get_student_id(self, obj):
+        """학번 앞 2자리만 반환 (예: 24)"""
+        return int(str(obj.student_id)[:2])
+
+
+class ProfileSurveySerializer(serializers.ModelSerializer):
+    """프로필 표시용 Survey 시리얼라이저 (scores, badges만 포함)"""
+    class Meta:
+        model = Survey
+        fields = ['scores', 'badges']
+
+
 class SurveySerializer(serializers.ModelSerializer):
     REQUIRED_KEYS = {
         'time_1', 'time_2', 'time_3', 'time_4',

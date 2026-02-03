@@ -361,7 +361,6 @@ class MatchingService:
         return self.cancel_matching(user_id)
 
     # ==================== 연락처 조회 ====================
-    # Account 완료시 연동 필요 !!!
     def get_contact(self, user_id: int) -> dict:
         property_obj = Property.objects.filter(user_id=user_id).last()
 
@@ -371,7 +370,6 @@ class MatchingService:
         current_status = property_obj.match_status
         allowed_statuses = [
             Property.MatchStatusChoice.BOTH_APPROVED,
-            Property.MatchStatusChoice.PARTNER_REJECTED,
             Property.MatchStatusChoice.PARTNER_REMATCHED,
         ]
 
@@ -387,13 +385,11 @@ class MatchingService:
             return {"success": False, "error": "match_history_not_found"}
 
         partner_id = self.history_service.get_partner_id(match_history, user_id)
-        partner_property = Property.objects.filter(user_id=partner_id).last()
 
         return {
             "success": True,
             "match_status": current_status,
-            "partner_id": partner_id,
-            "partner_nickname": partner_property.nickname if partner_property else None
+            "partner_id": partner_id
         }
 
     # ==================== 재매칭 ====================
