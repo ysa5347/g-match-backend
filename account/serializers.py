@@ -10,7 +10,7 @@ class UserInfoSerializer(serializers.ModelSerializer):
         model = CustomUser
         fields = [
             'uid', 'email', 'name', 'student_id', 'phone_number',
-            'birth_year', 'gender', 'house',
+            'birth_year', 'gender', 'house', 'nickname',
             'is_age_public', 'is_house_public',
             'is_oidc_user', 'date_joined'
         ]
@@ -18,7 +18,6 @@ class UserInfoSerializer(serializers.ModelSerializer):
             'uid', 'email', 'name', 'student_id', 'phone_number',
             'is_oidc_user', 'date_joined'
         ]
-
 
 class UserUpdateSerializer(serializers.ModelSerializer):
     """
@@ -30,7 +29,7 @@ class UserUpdateSerializer(serializers.ModelSerializer):
     class Meta:
         model = CustomUser
         fields = [
-            'birth_year', 'gender', 'house',
+            'birth_year', 'gender', 'house', 'nickname'
             'is_age_public', 'is_house_public'
         ]
 
@@ -124,7 +123,7 @@ class UserRegistrationSerializer(serializers.ModelSerializer):
 
     def validate_email(self, value):
         """GIST 이메일 검증"""
-        if not value.endswith('@gist.ac.kr'):
+        if not (value.endswith('@gist.ac.kr') or value.endswith('@gm.gist.ac.kr')):
             raise serializers.ValidationError('GIST 이메일만 사용 가능합니다.')
         if CustomUser.objects.filter(email=value).exists():
             raise serializers.ValidationError('이미 등록된 이메일입니다.')

@@ -109,9 +109,9 @@ class CustomUser(AbstractBaseUser, PermissionsMixin):
     name = models.CharField(max_length=100)
     student_id = models.CharField(max_length=20, blank=True, null=True)
     phone_number = models.CharField(max_length=20, blank=True, null=True)
-    nickname = models.CharField(max_length=20)
+    nickname = models.CharField(max_length=20, blank=True, null=True)
+
     # Profile Information (managed by our service)
-    birth_year = models.IntegerField(blank=True, null=True)
     gender = models.CharField(
         max_length=1,
         choices=[('M', 'Male'), ('F', 'Female')],
@@ -119,10 +119,6 @@ class CustomUser(AbstractBaseUser, PermissionsMixin):
         null=True
     )
     house = models.CharField(max_length=50, blank=True, null=True)
-
-    # Privacy Settings
-    is_age_public = models.BooleanField(default=True)
-    is_house_public = models.BooleanField(default=True)
 
     # Django Required Fields
     is_active = models.BooleanField(default=True)
