@@ -34,9 +34,10 @@ COPY --from=builder /root/.local /root/.local
 # Make sure scripts in .local are usable
 ENV PATH=/root/.local/bin:$PATH
 
-# Copy application code (tests/ excluded by .dockerignore)
+# Copy application code (tests/, matcher/ excluded)
 COPY g_match/ ./g_match/
 COPY account/ ./account/
+COPY match/ ./match/
 COPY manage.py .
 
 # Create user for running the application

@@ -20,6 +20,8 @@ spec:
         app: g-match
         component: web
     spec:
+      imagePullSecrets:
+      - name: ghcr-secret
       initContainers:
       # Wait for MySQL to be ready
       - name: wait-for-mysql
@@ -49,7 +51,7 @@ spec:
 
       # Run migrations
       - name: django-migrate
-        image: YOUR_REGISTRY/g-match-backend:latest  # Replace with your image
+        image: ghcr.io/ysa5347/g-match-backend:latest  # Replace with your image
         command:
         - python
         - manage.py
@@ -62,7 +64,7 @@ spec:
 
       # Collect static files
       - name: django-collectstatic
-        image: YOUR_REGISTRY/g-match-backend:latest  # Replace with your image
+        image: ghcr.io/ysa5347/g-match-backend:latest  # Replace with your image
         command:
         - python
         - manage.py
@@ -79,7 +81,7 @@ spec:
 
       containers:
       - name: django
-        image: YOUR_REGISTRY/g-match-backend:latest  # Replace with your image
+        image: ghcr.io/ysa5347/g-match-backend:latest  # Replace with your image
         ports:
         - containerPort: 8000
           name: http

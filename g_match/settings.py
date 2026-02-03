@@ -30,9 +30,11 @@ SECRET_KEY = os.getenv('SECRET_KEY')
 DEBUG = True
 
 ALLOWED_HOSTS = [
-    'localhost'
+    'localhost',
+    'api.g-match.com',
+    'stage.api.g-match.com',
+    'dev.api.g-match.com'
 ]
-
 
 # Application definition
 

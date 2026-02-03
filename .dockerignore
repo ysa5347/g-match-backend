@@ -48,5 +48,8 @@ media/
 # macOS
 .DS_Store
 
+# Matcher (separate project)
+matcher/
+
 # Misc
 *.csv
