@@ -87,11 +87,11 @@ WSGI_APPLICATION = 'g_match.wsgi.application'
 DATABASES = {
     'default': {
         'ENGINE': 'django.db.backends.mysql',
-        'NAME': os.getenv('DB_NAME'),
-        'USER': os.getenv('DB_USER'),
-        'PASSWORD': os.getenv('DB_PASSWORD'),
-        'HOST': os.getenv('DB_HOST'),
-        'PORT': os.getenv('DB_PORT'),
+        'NAME': os.getenv('ACC_DB_NAME'),
+        'USER': os.getenv('ACC_DB_USER'),
+        'PASSWORD': os.getenv('ACC_DB_PASSWORD'),
+        'HOST': os.getenv('ACC_DB_HOST'),
+        'PORT': os.getenv('ACC_DB_PORT'),
     }
 }
 
@@ -144,6 +144,7 @@ AUTH_USER_MODEL = 'account.CustomUser'
 CORS_ALLOWED_ORIGINS = [
     "http://localhost:3000",
     "http://127.0.0.1:3000",
+    "https://www.g-match.com"
 ]
 CORS_ALLOW_CREDENTIALS = True
 
@@ -197,3 +198,84 @@ SERVER_EMAIL = DEFAULT_FROM_EMAIL
 # Development: use console backend for testing
 if DEBUG:
     EMAIL_BACKEND = 'django.core.mail.backends.console.EmailBackend'
+
+
+# ==============================================
+# GIST IdP (인포팀 계정) OIDC Settings
+# Source: CLAUDE/OIDC_info.json (.well-known/openid-configuration)
+# ==============================================
+GIST_OIDC = {
+    # OIDC Provider URLs (from .well-known/openid-configuration)
+    'ISSUER': 'https://account.gistory.me',
+    'AUTHORIZATION_ENDPOINT': 'https://account.gistory.me/authorize',
+    'TOKEN_ENDPOINT': 'https://api.account.gistory.me/oauth/token',
+    'USERINFO_ENDPOINT': 'https://api.account.gistory.me/oauth/userinfo',
+    'JWKS_URI': 'https://api.account.gistory.me/oauth/certs',
+
+    # Client Credentials
+    'CLIENT_ID': os.getenv('GIST_OIDC_CLIENT_ID', ''),
+    'CLIENT_SECRET': os.getenv('GIST_OIDC_CLIENT_SECRET', ''),
+
+    # Redirect URIs
+    'REDIRECT_URI': os.getenv('GIST_OIDC_REDIRECT_URI', ''),
+    'POST_LOGOUT_REDIRECT_URI': os.getenv('GIST_OIDC_POST_LOGOUT_REDIRECT_URI', ''),
+
+    # OIDC Scopes (from scope_supported)
+    # - openid: 필수
+    # - profile: 프로필 정보
+    # - email: 이메일
+    # - phone_number: 전화번호 (주의: 'phone'이 아님)
+    # - student_id: 학번
+    # - offline_access: Refresh Token 발급 (선택)
+    'SCOPES': ['openid', 'profile', 'email', 'phone_number', 'student_id'],
+
+    # Token Settings
+    # Note: IdP uses ES256 (ECDSA) for ID Token signing, not RS256
+    'ID_TOKEN_SIGNING_ALG': 'ES256',
+    'ID_TOKEN_ISSUER_VALIDATION': True,
+    'ID_TOKEN_AUDIENCE_VALIDATION': True,
+
+    # Session Settings
+    'STATE_TTL': 600,  # 10 minutes for state parameter validity
+    'NONCE_TTL': 600,  # 10 minutes for nonce validity
+
+    # Claim Mapping (from claims_supported)
+    # IdP claims: sub, profile, email, phone_number, student_id
+    'CLAIM_MAPPING': {
+        'sub': 'sub',
+        'email': 'email',
+        'profile': 'profile',
+        'student_id': 'student_id',
+        'phone_number': 'phone_number',
+    },
+}
+
+# Frontend URL Configuration
+# OIDC 콜백 처리 후 F/E로 리다이렉트할 URL
+FRONTEND_URL = os.getenv('FRONTEND_URL', 'http://localhost:8080')
+FRONTEND_AUTH_CALLBACK_URL = os.getenv('FRONTEND_AUTH_CALLBACK_URL', f'{FRONTEND_URL}/auth/callback')
+
+# Logging Configuration
+LOGGING = {
+    'version': 1,
+    'disable_existing_loggers': False,
+    'formatters': {
+        'verbose': {
+            'format': '{levelname} {asctime} {module} {message}',
+            'style': '{',
+        },
+    },
+    'handlers': {
+        'console': {
+            'class': 'logging.StreamHandler',
+            'formatter': 'verbose',
+        },
+    },
+    'loggers': {
+        'account.utils.oidc_utils': {
+            'handlers': ['console'],
+            'level': 'DEBUG',
+            'propagate': True,
+        },
+    },
+}
