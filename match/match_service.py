@@ -151,7 +151,10 @@ class MatchingService:
 
         return {"success": True, "match_status": Property.MatchStatusChoice.IN_QUEUE}
 
-    # ==================== 매칭 취소 ====================
+    # ==================== 매칭 취소/거절 ====================
+    # status 1: 대기열 취소
+    # status 2: 거절
+    # status 3: 수락 후 대기 중 취소
     def cancel_matching(self, user_pk: int) -> dict:
         property_obj = Property.objects.filter(user_pk=user_pk).last()
 
@@ -159,10 +162,11 @@ class MatchingService:
             return {"success": False, "error": "profile_not_found"}
 
         current_status = property_obj.match_status
+
         allowed_statuses = [
             Property.MatchStatusChoice.IN_QUEUE,
             Property.MatchStatusChoice.MATCHED,
-            Property.MatchStatusChoice.MY_APPROVED,
+            Property.MatchStatusChoice.MY_APPROVED
         ]
 
         if current_status not in allowed_statuses:
@@ -173,38 +177,76 @@ class MatchingService:
                 "match_status": current_status
             }
 
-        # status 1
+        # status 1: 대기열에서만 제거
         if current_status == Property.MatchStatusChoice.IN_QUEUE:
             self.redis_service.remove_user(user_pk)
+            property_obj.match_status = Property.MatchStatusChoice.NOT_STARTED
+            property_obj.save()
+            return {"success": True, "match_status": Property.MatchStatusChoice.NOT_STARTED}
 
-        # status 2, 3
-        if current_status in [Property.MatchStatusChoice.MATCHED, Property.MatchStatusChoice.MY_APPROVED]:
-            match_history = self.history_service.get_by_status(user_pk, current_status)
+        # status 2, 3: 트랜잭션으로 처리
+        return self._cancel_with_partner(user_pk, current_status)
+
+    def _cancel_with_partner(self, user_pk: int, expected_status: int) -> dict:
+        with transaction.atomic():
+            # match_history 먼저 락
+            match_history = MatchHistory.objects.select_for_update().filter(
+                Q(user_a_pk=user_pk) | Q(user_b_pk=user_pk),
+                final_match_status=MatchHistory.ResultStatus.PENDING
+            ).order_by('-matched_at').first()
+
             if not match_history:
                 return {"success": False, "error": "match_history_not_found"}
-            self._handle_cancel_with_partner(user_pk, match_history)
 
-        property_obj.match_status = Property.MatchStatusChoice.NOT_STARTED
-        property_obj.save()
+            # 이미 FAILED면 상대가 먼저 거절한 것
+            if match_history.final_match_status == MatchHistory.ResultStatus.FAILED:
+                return {
+                    "success": False,
+                    "error": "invalid_status",
+                    "match_failed": True
+                }
 
-        return {"success": True, "match_status": Property.MatchStatusChoice.NOT_STARTED}
+            # 두 property를 pk 순서대로 락 (데드락 방지)
+            user_a_pk = match_history.user_a_pk
+            user_b_pk = match_history.user_b_pk
 
-    def _handle_cancel_with_partner(self, user_pk: int, match_history: MatchHistory):
-        self.history_service.update_my_approval(
-            match_history, user_pk, MatchHistory.ApprovalChoice.REJECTED
-        )
-        match_history.final_match_status = MatchHistory.ResultStatus.FAILED
-        match_history.save()
+            prop_a = Property.objects.select_for_update().filter(user_pk=user_a_pk).last()
+            prop_b = Property.objects.select_for_update().filter(user_pk=user_b_pk).last()
 
-        partner_pk = self.history_service.get_partner_pk(match_history, user_pk)
-        partner_property = Property.objects.filter(user_pk=partner_pk).last()
+            my_prop = prop_a if user_pk == user_a_pk else prop_b
+            partner_prop = prop_b if user_pk == user_a_pk else prop_a
 
-        if partner_property and partner_property.match_status in [
-            Property.MatchStatusChoice.MATCHED,
-            Property.MatchStatusChoice.MY_APPROVED
-        ]:
-            partner_property.match_status = Property.MatchStatusChoice.PARTNER_REJECTED
-            partner_property.save()
+            if not my_prop or not partner_prop:
+                return {"success": False, "error": "profile_not_found"}
+
+            # 상태 검증
+            if my_prop.match_status != expected_status:
+                return {
+                    "success": False,
+                    "error": "invalid_status",
+                    "match_status": my_prop.match_status
+                }
+
+            # 내 approval 업데이트 및 match_history FAILED 처리
+            self.history_service.update_my_approval(
+                match_history, user_pk, MatchHistory.ApprovalChoice.REJECTED
+            )
+            match_history.final_match_status = MatchHistory.ResultStatus.FAILED
+            match_history.save()
+
+            # 상대방 status를 PARTNER_REJECTED(5)로
+            if partner_prop.match_status in [
+                Property.MatchStatusChoice.MATCHED,
+                Property.MatchStatusChoice.MY_APPROVED
+            ]:
+                partner_prop.match_status = Property.MatchStatusChoice.PARTNER_REJECTED
+                partner_prop.save()
+
+            # 내 상태 초기화
+            my_prop.match_status = Property.MatchStatusChoice.NOT_STARTED
+            my_prop.save()
+
+            return {"success": True, "match_status": Property.MatchStatusChoice.NOT_STARTED}
 
     # ==================== 매칭 결과 조회 ====================
     def get_result(self, user_pk: int) -> dict:
@@ -252,111 +294,70 @@ class MatchingService:
     # ==================== 수락 ====================
     def agree(self, user_pk: int) -> dict:
         with transaction.atomic():
-            property_obj = Property.objects.select_for_update().filter(
-                user_pk=user_pk
-            ).last()
+            match_history = MatchHistory.objects.select_for_update().filter(
+                Q(user_a_pk=user_pk) | Q(user_b_pk=user_pk),
+                final_match_status=MatchHistory.ResultStatus.PENDING
+            ).order_by('-matched_at').first()
 
-            if not property_obj:
-                return {"success": False, "error": "profile_not_found"}
-
-            current_status = property_obj.match_status
-
-            if current_status != Property.MatchStatusChoice.MATCHED:
-                return {
-                    "success": False,
-                    "error": "invalid_status",
-                    "match_status": current_status
-                }
-
-            match_history = self.history_service.get_by_status(user_pk, current_status)
             if not match_history:
                 return {"success": False, "error": "match_history_not_found"}
 
+            if match_history.final_match_status == MatchHistory.ResultStatus.FAILED:
+                return {
+                    "success": False,
+                    "error": "invalid_status",
+                    "match_failed": True
+                }
+
+            # 두 property를 pk 순서대로 락 (데드락 방지)
+            user_a_pk = match_history.user_a_pk
+            user_b_pk = match_history.user_b_pk
+
+            prop_a = Property.objects.select_for_update().filter(user_pk=user_a_pk).last()
+            prop_b = Property.objects.select_for_update().filter(user_pk=user_b_pk).last()
+
+            my_prop = prop_a if user_pk == user_a_pk else prop_b
+            partner_prop = prop_b if user_pk == user_a_pk else prop_a
+
+            if not my_prop or not partner_prop:
+                return {"success": False, "error": "profile_not_found"}
+
+            if my_prop.match_status != Property.MatchStatusChoice.MATCHED:
+                return {
+                    "success": False,
+                    "error": "invalid_status",
+                    "match_status": my_prop.match_status
+                }
+
+            # 내 approval업데이트 및 상대방 확인
             self.history_service.update_my_approval(
                 match_history, user_pk, MatchHistory.ApprovalChoice.APPROVED
             )
-
             partner_approval = self.history_service.get_partner_approval(match_history, user_pk)
 
+            # property에 반영
             if partner_approval == MatchHistory.ApprovalChoice.APPROVED:
-                # 상대도 수락 → 둘 다 status 4로
-                partner_pk = self.history_service.get_partner_pk(match_history, user_pk)
-                partner_property = Property.objects.select_for_update().filter(
-                    user_pk=partner_pk
-                ).last()
-
-                property_obj.match_status = Property.MatchStatusChoice.BOTH_APPROVED
-                if partner_property:
-                    partner_property.match_status = Property.MatchStatusChoice.BOTH_APPROVED
-                    partner_property.save()
+                my_prop.match_status = Property.MatchStatusChoice.BOTH_APPROVED
+                if partner_prop:
+                    partner_prop.match_status = Property.MatchStatusChoice.BOTH_APPROVED
+                    partner_prop.save()
 
                 match_history.final_match_status = MatchHistory.ResultStatus.SUCCESS
                 match_history.save()
             else:
-                # 상대는 아직 대기 중 → 내 status 3으로
-                property_obj.match_status = Property.MatchStatusChoice.MY_APPROVED
+                my_prop.match_status = Property.MatchStatusChoice.MY_APPROVED
 
-            property_obj.save()
+            my_prop.save()
 
             return {
                 "success": True,
-                "match_status": property_obj.match_status
+                "match_status": my_prop.match_status
             }
 
     # ==================== 거절 ====================
+    # status 2에서 상대 프로필을 보고 거절 (cancel과 동일)
     def reject(self, user_pk: int) -> dict:
-        with transaction.atomic():
-            property_obj = Property.objects.select_for_update().filter(
-                user_pk=user_pk
-            ).last()
-
-            if not property_obj:
-                return {"success": False, "error": "profile_not_found"}
-
-            current_status = property_obj.match_status
-            allowed_statuses = [
-                Property.MatchStatusChoice.MATCHED,
-                Property.MatchStatusChoice.MY_APPROVED,
-            ]
-
-            if current_status not in allowed_statuses:
-                return {
-                    "success": False,
-                    "error": "invalid_status",
-                    "match_status": current_status
-                }
-
-            match_history = self.history_service.get_by_status(user_pk, current_status)
-            if not match_history:
-                return {"success": False, "error": "match_history_not_found"}
-
-            self.history_service.update_my_approval(
-                match_history, user_pk, MatchHistory.ApprovalChoice.REJECTED
-            )
-            match_history.final_match_status = MatchHistory.ResultStatus.FAILED
-            match_history.save()
-
-            # 상대방 status를 PARTNER_REJECTED(5)로
-            partner_pk = self.history_service.get_partner_pk(match_history, user_pk)
-            partner_property = Property.objects.select_for_update().filter(
-                user_pk=partner_pk
-            ).last()
-
-            if partner_property and partner_property.match_status in [
-                Property.MatchStatusChoice.MATCHED,
-                Property.MatchStatusChoice.MY_APPROVED
-            ]:
-                partner_property.match_status = Property.MatchStatusChoice.PARTNER_REJECTED
-                partner_property.save()
-
-            # 내 상태 초기화
-            property_obj.match_status = Property.MatchStatusChoice.NOT_STARTED
-            property_obj.save()
-
-            return {
-                "success": True,
-                "match_status": Property.MatchStatusChoice.NOT_STARTED
-            }
+        return self.cancel_matching(user_pk)
 
     # ==================== 연락처 조회 ====================
     # Account 완료시 연동 필요 !!!
@@ -396,45 +397,72 @@ class MatchingService:
 
     # ==================== 재매칭 ====================
     def rematch(self, user_pk: int) -> dict:
-        with transaction.atomic():
-            property_obj = Property.objects.select_for_update().filter(
-                user_pk=user_pk
-            ).last()
+        # 현재 상태 확인 (락 없이)
+        property_obj = Property.objects.filter(user_pk=user_pk).last()
 
-            if not property_obj:
+        if not property_obj:
+            return {"success": False, "error": "profile_not_found"}
+
+        current_status = property_obj.match_status
+
+        # status 5, 6: 상대방 변경 없이 내 상태만 초기화
+        if current_status in [
+            Property.MatchStatusChoice.PARTNER_REJECTED,
+            Property.MatchStatusChoice.PARTNER_REMATCHED
+        ]:
+            property_obj.match_status = Property.MatchStatusChoice.NOT_STARTED
+            property_obj.save()
+            return {"success": True, "match_status": Property.MatchStatusChoice.NOT_STARTED}
+
+        # status 4: 트랜잭션으로 처리 (상대방 상태 변경 필요)
+        if current_status == Property.MatchStatusChoice.BOTH_APPROVED:
+            return self._rematch_from_both_approved(user_pk)
+
+        return {
+            "success": False,
+            "error": "invalid_status",
+            "match_status": current_status
+        }
+
+    def _rematch_from_both_approved(self, user_pk: int) -> dict:
+        with transaction.atomic():
+            # match_history 먼저 락
+            match_history = MatchHistory.objects.select_for_update().filter(
+                Q(user_a_pk=user_pk) | Q(user_b_pk=user_pk),
+                final_match_status=MatchHistory.ResultStatus.SUCCESS
+            ).order_by('-matched_at').first()
+
+            if not match_history:
+                return {"success": False, "error": "match_history_not_found"}
+
+            # 두 property를 pk 순서대로 락 (데드락 방지)
+            user_a_pk = match_history.user_a_pk
+            user_b_pk = match_history.user_b_pk
+
+            prop_a = Property.objects.select_for_update().filter(user_pk=user_a_pk).last()
+            prop_b = Property.objects.select_for_update().filter(user_pk=user_b_pk).last()
+
+            my_prop = prop_a if user_pk == user_a_pk else prop_b
+            partner_prop = prop_b if user_pk == user_a_pk else prop_a
+
+            if not my_prop:
                 return {"success": False, "error": "profile_not_found"}
 
-            current_status = property_obj.match_status
-            allowed_statuses = [
-                Property.MatchStatusChoice.BOTH_APPROVED,
-                Property.MatchStatusChoice.PARTNER_REJECTED,
-                Property.MatchStatusChoice.PARTNER_REMATCHED,
-            ]
-
-            if current_status not in allowed_statuses:
+            # 상태 검증
+            if my_prop.match_status != Property.MatchStatusChoice.BOTH_APPROVED:
                 return {
                     "success": False,
                     "error": "invalid_status",
-                    "match_status": current_status
+                    "match_status": my_prop.match_status
                 }
 
-            # status 4: 상대방 status를 6으로 변경
-            if current_status == Property.MatchStatusChoice.BOTH_APPROVED:
-                match_history = self.history_service.get_by_status(user_pk, current_status)
-                if match_history:
-                    partner_pk = self.history_service.get_partner_pk(match_history, user_pk)
-                    partner_property = Property.objects.select_for_update().filter(
-                        user_pk=partner_pk
-                    ).last()
+            # 상대방 status를 PARTNER_REMATCHED(6)로
+            if partner_prop and partner_prop.match_status == Property.MatchStatusChoice.BOTH_APPROVED:
+                partner_prop.match_status = Property.MatchStatusChoice.PARTNER_REMATCHED
+                partner_prop.save()
 
-                    if partner_property and partner_property.match_status == Property.MatchStatusChoice.BOTH_APPROVED:
-                        partner_property.match_status = Property.MatchStatusChoice.PARTNER_REMATCHED
-                        partner_property.save()
+            # 내 상태 초기화
+            my_prop.match_status = Property.MatchStatusChoice.NOT_STARTED
+            my_prop.save()
 
-            property_obj.match_status = Property.MatchStatusChoice.NOT_STARTED
-            property_obj.save()
-
-            return {
-                "success": True,
-                "match_status": Property.MatchStatusChoice.NOT_STARTED
-            }
+            return {"success": True, "match_status": Property.MatchStatusChoice.NOT_STARTED}

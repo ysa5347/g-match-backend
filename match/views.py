@@ -141,7 +141,7 @@ class MatchingViewSet(viewsets.ViewSet):
         error_to_status = {
             "profile_not_found": status.HTTP_404_NOT_FOUND,
             "match_history_not_found": status.HTTP_404_NOT_FOUND,
-            "partner_data_fetch_failed": status.HTTP_500_INTERNAL_SERVER_ERROR,
+            "partner_data_fetch_failed": status.HTTP_404_NOT_FOUND,
             "invalid_status": status.HTTP_400_BAD_REQUEST,
         }
         return error_to_status.get(error, status.HTTP_500_INTERNAL_SERVER_ERROR)
