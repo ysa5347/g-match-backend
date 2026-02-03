@@ -32,5 +32,10 @@ venv.bak/
 # Static
 staticfiles/
 
+claude
+migrations
 CLAUDE/
 API_list.csv
+
+matcher/k8s
+matcher/scripts

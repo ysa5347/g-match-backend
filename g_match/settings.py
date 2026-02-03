@@ -48,6 +48,7 @@ INSTALLED_APPS = [
     'django_redis',
     'drf_yasg',
     'account',
+    'match',
 ]
 
 MIDDLEWARE = [
