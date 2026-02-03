@@ -1,5 +1,8 @@
 from functools import wraps
 from django.http import JsonResponse
+from rest_framework.response import Response
+from rest_framework import status
+
 
 def identity_check(view_func):
     """신원 확인 데코레이터"""
@@ -12,6 +15,25 @@ def identity_check(view_func):
                 'error': 'Identity check failed',
                 'message': '신원 확인에 실패했습니다.'
             }, status=403)
+        return view_func(request, *args, **kwargs)
+    return wrapper
+
+
+def login_required(view_func):
+    """
+    로그인 필수 데코레이터 (DRF 뷰용)
+
+    세션에 user_id가 없으면 401 Unauthorized 반환
+    """
+    @wraps(view_func)
+    def wrapper(request, *args, **kwargs):
+        user_id = request.session.get('user_id')
+        if not user_id:
+            return Response({
+                'success': False,
+                'error': 'Login required',
+                'message': '로그인이 필요합니다.'
+            }, status=status.HTTP_401_UNAUTHORIZED)
         return view_func(request, *args, **kwargs)
     return wrapper
 
