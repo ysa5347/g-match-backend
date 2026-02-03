@@ -33,7 +33,7 @@ class CustomUserManager(BaseUserManager):
 
         return self.create_user(email, password, **extra_fields)
 
-    def get_or_create_oidc_user(self, oidc_user_info):
+    def get_or_create_oidc_user(self, oidc_user_info, extra_data=None):
         """
         GIST IdP OIDC로부터 받은 사용자 정보로 사용자 조회 또는 생성
 
@@ -44,6 +44,9 @@ class CustomUserManager(BaseUserManager):
                 - name: 사용자 이름
                 - student_id: 학번
                 - phone_number: 전화번호
+            extra_data: dict containing additional user info:
+                - gender: 성별 (M/F) - 필수
+                - house: 기숙사 동 - 선택
 
         Returns:
             tuple: (user, created)
@@ -77,14 +80,22 @@ class CustomUserManager(BaseUserManager):
         except self.model.DoesNotExist:
             pass
 
-        # 새 사용자 생성
-        user = self.create_user(
-            email=email,
-            gist_id=gist_id,
-            name=oidc_user_info.get('name', ''),
-            student_id=oidc_user_info.get('student_id'),
-            phone_number=oidc_user_info.get('phone_number'),
-        )
+        # 새 사용자 생성 데이터 준비
+        user_data = {
+            'email': email,
+            'gist_id': gist_id,
+            'name': oidc_user_info.get('name', ''),
+            'student_id': oidc_user_info.get('student_id'),
+            'phone_number': oidc_user_info.get('phone_number'),
+        }
+
+        # 추가 정보 병합 (gender, house)
+        if extra_data:
+            for key in ['gender', 'house']:
+                if key in extra_data and extra_data[key] is not None:
+                    user_data[key] = extra_data[key]
+
+        user = self.create_user(**user_data)
         return user, True
 
 
@@ -109,9 +120,10 @@ class CustomUser(AbstractBaseUser, PermissionsMixin):
     name = models.CharField(max_length=100)
     student_id = models.CharField(max_length=20, blank=True, null=True)
     phone_number = models.CharField(max_length=20, blank=True, null=True)
-    nickname = models.CharField(max_length=20)
+
     # Profile Information (managed by our service)
-    birth_year = models.IntegerField(blank=True, null=True)
+    nickname = models.CharField(max_length=20, blank=True, null=True)
+
     gender = models.CharField(
         max_length=1,
         choices=[('M', 'Male'), ('F', 'Female')],
@@ -119,11 +131,6 @@ class CustomUser(AbstractBaseUser, PermissionsMixin):
         null=True
     )
     house = models.CharField(max_length=50, blank=True, null=True)
-
-    # Privacy Settings
-    is_age_public = models.BooleanField(default=True)
-    is_house_public = models.BooleanField(default=True)
-
     # Django Required Fields
     is_active = models.BooleanField(default=True)
     is_staff = models.BooleanField(default=False)

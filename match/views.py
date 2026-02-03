@@ -224,10 +224,8 @@ class MatchingViewSet(viewsets.ViewSet):
             "success": True,
             "match_status": result["match_status"],
             "partner": {
-                "name": partner_user.name,
-                "gender": partner_user.gender,
-                "student_id": int(str(partner_user.student_id)[:2]),
-                "phone_number": partner_user.phone_number,
+                "user_id": result["partner_id"],
+                "nickname": result["partner_nickname"],
             }
         }, status=status.HTTP_200_OK)
 

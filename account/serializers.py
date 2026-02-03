@@ -10,8 +10,7 @@ class UserInfoSerializer(serializers.ModelSerializer):
         model = CustomUser
         fields = [
             'uid', 'email', 'name', 'student_id', 'phone_number',
-            'birth_year', 'gender', 'house',
-            'is_age_public', 'is_house_public',
+            'gender', 'house', 'nickname',
             'is_oidc_user', 'date_joined'
         ]
         read_only_fields = [
@@ -30,8 +29,7 @@ class UserUpdateSerializer(serializers.ModelSerializer):
     class Meta:
         model = CustomUser
         fields = [
-            'birth_year', 'gender', 'house',
-            'is_age_public', 'is_house_public'
+            'gender', 'house', 'nickname'
         ]
 
 
@@ -52,6 +50,28 @@ class AgreementSerializer(serializers.ModelSerializer):
                 'privacy_policy': '개인정보 처리방침에 동의해야 합니다.'
             })
         return data
+
+
+class BasicInfoSerializer(serializers.Serializer):
+    """
+    회원가입 기본정보 Serializer (Step 2)
+
+    GIST IdP에서 제공하지 않는 추가 정보를 입력받습니다.
+    - gender: 필수
+    - house: 선택
+    """
+    gender = serializers.ChoiceField(
+        required=True,
+        choices=[('M', 'Male'), ('F', 'Female')],
+        help_text='성별 (M: 남성, F: 여성) - 필수'
+    )
+    house = serializers.CharField(
+        required=False,
+        max_length=50,
+        allow_null=True,
+        allow_blank=True,
+        help_text='기숙사 동 (예: A동) - 선택'
+    )
 
 
 class OIDCUserInfoSerializer(serializers.Serializer):
@@ -124,7 +144,7 @@ class UserRegistrationSerializer(serializers.ModelSerializer):
 
     def validate_email(self, value):
         """GIST 이메일 검증"""
-        if not value.endswith('@gist.ac.kr'):
+        if not (value.endswith('@gist.ac.kr') or value.endswith('@gm.gist.ac.kr')):
             raise serializers.ValidationError('GIST 이메일만 사용 가능합니다.')
         if CustomUser.objects.filter(email=value).exists():
             raise serializers.ValidationError('이미 등록된 이메일입니다.')
