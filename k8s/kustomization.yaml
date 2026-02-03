@@ -18,6 +18,6 @@ commonLabels:
 
 # Images (can be overridden per environment)
 images:
-  - name: YOUR_REGISTRY/g-match-backend
-    newName: YOUR_REGISTRY/g-match-backend
+  - name: ghcr.io/ysa5347/g-match-backend
+    newName: ghcr.io/ysa5347/g-match-backend
     newTag: latest

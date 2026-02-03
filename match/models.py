@@ -20,11 +20,11 @@ class Property(models.Model):
 
     property_id = models.BigAutoField(primary_key=True)
     created_at = models.DateTimeField(auto_now_add=True)
-    user_pk = models.BigIntegerField()  # 논리적 연결 (FK 제약 없음)
+    user_id = models.UUIDField()  # 논리적 연결 (FK 제약 없음)
 
     # Account DB에서 받아올 내용
     nickname = models.CharField(max_length=20)
-    student_num = models.SmallIntegerField()
+    student_id = models.SmallIntegerField()
     gender = models.CharField(max_length=1)  # 'M' or 'F'
 
     is_smoker = models.BooleanField()
@@ -52,13 +52,13 @@ class Property(models.Model):
 
     def __str__(self):
         date_str = self.created_at.strftime('%Y-%m-%d')
-        return f"[property #{self.pk}] User({self.user_pk}) date({date_str})"
+        return f"[property #{self.pk}] User({self.user_id}) date({date_str})"
 
 
 class Survey(models.Model):
     survey_id = models.BigAutoField(primary_key=True)
     created_at = models.DateTimeField(auto_now_add=True)
-    user_pk = models.BigIntegerField()  # 논리적 연결
+    user_id = models.UUIDField()  # 논리적 연결
 
     surveys = models.JSONField()
     weights = models.JSONField()
@@ -71,7 +71,7 @@ class Survey(models.Model):
 
     def __str__(self):
         date_str = self.created_at.strftime('%Y-%m-%d')
-        return f"[survey #{self.pk}] User({self.user_pk}) date({date_str})"
+        return f"[survey #{self.pk}] User({self.user_id}) date({date_str})"
 
 
 class MatchHistory(models.Model):
@@ -88,8 +88,8 @@ class MatchHistory(models.Model):
     matched_at = models.DateTimeField(auto_now_add=True)
 
     # 사용자 (논리적 연결)
-    user_a_pk = models.BigIntegerField()
-    user_b_pk = models.BigIntegerField()
+    user_a_id = models.UUIDField()
+    user_b_id = models.UUIDField()
 
     # 매칭 당시 프로필 ID (논리적 연결)
     prop_a_id = models.BigIntegerField()
@@ -118,4 +118,4 @@ class MatchHistory(models.Model):
         ordering = ['-matched_at']
 
     def __str__(self):
-        return f"[history #{self.pk}] User({self.user_a_pk}) & User({self.user_b_pk})"
+        return f"[history #{self.pk}] User({self.user_a_id}) & User({self.user_b_id})"

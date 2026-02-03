@@ -1,21 +1,6 @@
 from functools import wraps
 from django.http import JsonResponse
 
-
-def login_required(view_func):
-    """로그인 필수 데코레이터"""
-    @wraps(view_func)
-    def wrapper(request, *args, **kwargs):
-        if not request.session.get('user_id'):
-            return JsonResponse({
-                'success': False,
-                'error': 'Login required',
-                'message': '로그인이 필요합니다.'
-            }, status=401)
-        return view_func(request, *args, **kwargs)
-    return wrapper
-
-
 def identity_check(view_func):
     """신원 확인 데코레이터"""
     @wraps(view_func)

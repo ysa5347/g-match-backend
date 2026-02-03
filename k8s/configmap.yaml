@@ -4,22 +4,21 @@ metadata:
   name: g-match-config
   namespace: g-match
 data:
-  # Django settings
   DEBUG: "False"
   ALLOWED_HOSTS: "api.g-match.local,localhost"
 
-  # Database
-  DB_NAME: "g_match"
+  DB_NAME: "g-match"
   DB_USER: "django-server"
-  DB_HOST: "g-match-mysql"
+  DB_HOST: "mysqldb.g-match.svc.cluster.local"
   DB_PORT: "3306"
 
-  # Redis
-  REDIS_HOST: "g-match-redis"
+  REDIS_HOST: "redis.g-match.svc.cluster.local"
   REDIS_PORT: "6379"
 
-  # Email
-  EMAIL_HOST: "smtp.gmail.com"
-  EMAIL_PORT: "587"
-  EMAIL_USE_TLS: "True"
-  DEFAULT_FROM_EMAIL: "noreply@g-match.com"
+  FRONTEND_URL: "http://www.g-match.org"
+  FRONTEND_AUTH_CALLBACK_URL: "http://www.g-match.org/auth/callback"
+
+  GIST_OIDC_CLIENT_ID: "26dbdb53-b19e-4241-9187-f4c24e6173e2"
+
+  GIST_OIDC_REDIRECT_URI: "http://api.g-match.org/api/v1alpha1/account/auth/oidc/callback"
+  GIST_OIDC_POST_LOGOUT_REDIRECT_URI: "http://api.g-match.org/api/v1alpha1/account/auth/oidc/callback"

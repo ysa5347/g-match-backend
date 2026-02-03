@@ -11,6 +11,7 @@ from django.utils import timezone
 from django.db import transaction
 from django.db.models import Q
 
+from account.models import CustomUser
 from .models import Property, Survey, MatchHistory
 
 
@@ -18,9 +19,9 @@ class RedisQueueService:
     def __init__(self, redis_client: redis.Redis):
         self.redis = redis_client
 
-    def register_user(self, user_pk: int, property_obj: Property, survey_obj: Survey):
+    def register_user(self, user_id: int, property_obj: Property, survey_obj: Survey):
         queue_data = {
-            "user_pk": user_pk,
+            "user_id": user_id,
             "property_id": property_obj.property_id,
             "survey_id": survey_obj.survey_id,
             "basic": {
@@ -40,17 +41,17 @@ class RedisQueueService:
             "edge_calculated": False
         }
 
-        redis_key = f"match:user-queue:{user_pk}"
+        redis_key = f"match:user-queue:{user_id}"
         self.redis.set(redis_key, json.dumps(queue_data))
 
-    def remove_user(self, user_pk: int):
-        redis_key = f"match:user-queue:{user_pk}"
+    def remove_user(self, user_id: int):
+        redis_key = f"match:user-queue:{user_id}"
         self.redis.delete(redis_key)
 
 
 class MatchHistoryService:
     @staticmethod
-    def get_by_status(user_pk: int, match_status: int) -> MatchHistory | None:
+    def get_by_status(user_id: int, match_status: int) -> MatchHistory | None:
         status_to_result = {
             Property.MatchStatusChoice.MATCHED: MatchHistory.ResultStatus.PENDING,
             Property.MatchStatusChoice.MY_APPROVED: MatchHistory.ResultStatus.PENDING,
@@ -64,33 +65,33 @@ class MatchHistoryService:
             return None
 
         return MatchHistory.objects.filter(
-            Q(user_a_pk=user_pk) | Q(user_b_pk=user_pk),
+            Q(user_a_id=user_id) | Q(user_b_id=user_id),
             final_match_status=result_status
         ).order_by('-matched_at').first()
 
     @staticmethod
-    def get_partner_pk(match_history: MatchHistory, my_pk: int) -> int:
-        if match_history.user_a_pk == my_pk:
-            return match_history.user_b_pk
-        return match_history.user_a_pk
+    def get_partner_id(match_history: MatchHistory, my_id: int) -> int:
+        if match_history.user_a_id == my_id:
+            return match_history.user_b_id
+        return match_history.user_a_id
 
     @staticmethod
-    def get_partner_ids(match_history: MatchHistory, my_pk: int) -> tuple[int, int]:
-        if match_history.user_a_pk == my_pk:
+    def get_partner_profile_ids(match_history: MatchHistory, my_id: int) -> tuple[int, int]:
+        if match_history.user_a_id == my_id:
             return match_history.prop_b_id, match_history.surv_b_id
         return match_history.prop_a_id, match_history.surv_a_id
 
     @staticmethod
-    def update_my_approval(match_history: MatchHistory, my_pk: int, approval_status: int):
-        if match_history.user_a_pk == my_pk:
+    def update_my_approval(match_history: MatchHistory, my_id: int, approval_status: int):
+        if match_history.user_a_id == my_id:
             match_history.a_approval = approval_status
         else:
             match_history.b_approval = approval_status
         match_history.save()
 
     @staticmethod
-    def get_partner_approval(match_history: MatchHistory, my_pk: int) -> int:
-        if match_history.user_a_pk == my_pk:
+    def get_partner_approval(match_history: MatchHistory, my_id: int) -> int:
+        if match_history.user_a_id == my_id:
             return match_history.b_approval
         return match_history.a_approval
 
@@ -103,8 +104,8 @@ class MatchingService:
         self.history_service = MatchHistoryService()
 
     # ==================== 상태 조회 ====================
-    def get_status(self, user_pk: int) -> dict:
-        property_obj = Property.objects.filter(user_pk=user_pk).last()
+    def get_status(self, user_id: int) -> dict:
+        property_obj = Property.objects.filter(user_id=user_id).last()
 
         if not property_obj:
             return {"success": False, "error": "profile_not_found"}
@@ -119,7 +120,7 @@ class MatchingService:
             Property.MatchStatusChoice.PARTNER_REJECTED,
             Property.MatchStatusChoice.PARTNER_REMATCHED,
         ]:
-            match_history = self.history_service.get_by_status(user_pk, match_status)
+            match_history = self.history_service.get_by_status(user_id, match_status)
             if match_history and match_history.matched_at:
                 days_passed = (timezone.now() - match_history.matched_at).days
                 if days_passed > self.MATCH_EXPIRY_DAYS:
@@ -130,9 +131,9 @@ class MatchingService:
         return {"success": True, "match_status": match_status}
 
     # ==================== 대기열 등록 ====================
-    def start_matching(self, user_pk: int) -> dict:
-        property_obj = Property.objects.filter(user_pk=user_pk).last()
-        survey_obj = Survey.objects.filter(user_pk=user_pk).last()
+    def start_matching(self, user_id: int) -> dict:
+        property_obj = Property.objects.filter(user_id=user_id).last()
+        survey_obj = Survey.objects.filter(user_id=user_id).last()
 
         if not property_obj or not survey_obj:
             return {"success": False, "error": "profile_not_found"}
@@ -145,7 +146,7 @@ class MatchingService:
                 "match_status": property_obj.match_status
             }
 
-        self.redis_service.register_user(user_pk, property_obj, survey_obj)
+        self.redis_service.register_user(user_id, property_obj, survey_obj)
         property_obj.match_status = Property.MatchStatusChoice.IN_QUEUE
         property_obj.save()
 
@@ -155,8 +156,8 @@ class MatchingService:
     # status 1: 대기열 취소
     # status 2: 거절
     # status 3: 수락 후 대기 중 취소
-    def cancel_matching(self, user_pk: int) -> dict:
-        property_obj = Property.objects.filter(user_pk=user_pk).last()
+    def cancel_matching(self, user_id: int) -> dict:
+        property_obj = Property.objects.filter(user_id=user_id).last()
 
         if not property_obj:
             return {"success": False, "error": "profile_not_found"}
@@ -179,19 +180,19 @@ class MatchingService:
 
         # status 1: 대기열에서만 제거
         if current_status == Property.MatchStatusChoice.IN_QUEUE:
-            self.redis_service.remove_user(user_pk)
+            self.redis_service.remove_user(user_id)
             property_obj.match_status = Property.MatchStatusChoice.NOT_STARTED
             property_obj.save()
             return {"success": True, "match_status": Property.MatchStatusChoice.NOT_STARTED}
 
         # status 2, 3: 트랜잭션으로 처리
-        return self._cancel_with_partner(user_pk, current_status)
+        return self._cancel_with_partner(user_id, current_status)
 
-    def _cancel_with_partner(self, user_pk: int, expected_status: int) -> dict:
+    def _cancel_with_partner(self, user_id: int, expected_status: int) -> dict:
         with transaction.atomic():
             # match_history 먼저 락
             match_history = MatchHistory.objects.select_for_update().filter(
-                Q(user_a_pk=user_pk) | Q(user_b_pk=user_pk),
+                Q(user_a_id=user_id) | Q(user_b_id=user_id),
                 final_match_status=MatchHistory.ResultStatus.PENDING
             ).order_by('-matched_at').first()
 
@@ -206,15 +207,15 @@ class MatchingService:
                     "match_failed": True
                 }
 
-            # 두 property를 pk 순서대로 락 (데드락 방지)
-            user_a_pk = match_history.user_a_pk
-            user_b_pk = match_history.user_b_pk
+            # 두 property를 id 순서대로 락 (데드락 방지)
+            user_a_id = match_history.user_a_id
+            user_b_id = match_history.user_b_id
 
-            prop_a = Property.objects.select_for_update().filter(user_pk=user_a_pk).last()
-            prop_b = Property.objects.select_for_update().filter(user_pk=user_b_pk).last()
+            prop_a = Property.objects.select_for_update().filter(user_id=user_a_id).last()
+            prop_b = Property.objects.select_for_update().filter(user_id=user_b_id).last()
 
-            my_prop = prop_a if user_pk == user_a_pk else prop_b
-            partner_prop = prop_b if user_pk == user_a_pk else prop_a
+            my_prop = prop_a if user_id == user_a_id else prop_b
+            partner_prop = prop_b if user_id == user_a_id else prop_a
 
             if not my_prop or not partner_prop:
                 return {"success": False, "error": "profile_not_found"}
@@ -229,7 +230,7 @@ class MatchingService:
 
             # 내 approval 업데이트 및 match_history FAILED 처리
             self.history_service.update_my_approval(
-                match_history, user_pk, MatchHistory.ApprovalChoice.REJECTED
+                match_history, user_id, MatchHistory.ApprovalChoice.REJECTED
             )
             match_history.final_match_status = MatchHistory.ResultStatus.FAILED
             match_history.save()
@@ -249,8 +250,8 @@ class MatchingService:
             return {"success": True, "match_status": Property.MatchStatusChoice.NOT_STARTED}
 
     # ==================== 매칭 결과 조회 ====================
-    def get_result(self, user_pk: int) -> dict:
-        property_obj = Property.objects.filter(user_pk=user_pk).last()
+    def get_result(self, user_id: int) -> dict:
+        property_obj = Property.objects.filter(user_id=user_id).last()
 
         if not property_obj:
             return {"success": False, "error": "profile_not_found"}
@@ -269,12 +270,12 @@ class MatchingService:
                 "match_status": current_status
             }
 
-        match_history = self.history_service.get_by_status(user_pk, current_status)
+        match_history = self.history_service.get_by_status(user_id, current_status)
         if not match_history:
             return {"success": False, "error": "match_history_not_found"}
 
         partner_prop_id, partner_surv_id = self.history_service.get_partner_ids(
-            match_history, user_pk
+            match_history, user_id
         )
         partner_property = Property.objects.filter(property_id=partner_prop_id).first()
         partner_survey = Survey.objects.filter(survey_id=partner_surv_id).first()
@@ -292,10 +293,10 @@ class MatchingService:
         }
 
     # ==================== 수락 ====================
-    def agree(self, user_pk: int) -> dict:
+    def agree(self, user_id: int) -> dict:
         with transaction.atomic():
             match_history = MatchHistory.objects.select_for_update().filter(
-                Q(user_a_pk=user_pk) | Q(user_b_pk=user_pk),
+                Q(user_a_id=user_id) | Q(user_b_id=user_id),
                 final_match_status=MatchHistory.ResultStatus.PENDING
             ).order_by('-matched_at').first()
 
@@ -309,15 +310,15 @@ class MatchingService:
                     "match_failed": True
                 }
 
-            # 두 property를 pk 순서대로 락 (데드락 방지)
-            user_a_pk = match_history.user_a_pk
-            user_b_pk = match_history.user_b_pk
+            # 두 property를 id 순서대로 락 (데드락 방지)
+            user_a_id = match_history.user_a_id
+            user_b_id = match_history.user_b_id
 
-            prop_a = Property.objects.select_for_update().filter(user_pk=user_a_pk).last()
-            prop_b = Property.objects.select_for_update().filter(user_pk=user_b_pk).last()
+            prop_a = Property.objects.select_for_update().filter(user_id=user_a_id).last()
+            prop_b = Property.objects.select_for_update().filter(user_id=user_b_id).last()
 
-            my_prop = prop_a if user_pk == user_a_pk else prop_b
-            partner_prop = prop_b if user_pk == user_a_pk else prop_a
+            my_prop = prop_a if user_id == user_a_id else prop_b
+            partner_prop = prop_b if user_id == user_a_id else prop_a
 
             if not my_prop or not partner_prop:
                 return {"success": False, "error": "profile_not_found"}
@@ -329,11 +330,11 @@ class MatchingService:
                     "match_status": my_prop.match_status
                 }
 
-            # 내 approval업데이트 및 상대방 확인
+            # 내 approval 업데이트 및 상대방 확인
             self.history_service.update_my_approval(
-                match_history, user_pk, MatchHistory.ApprovalChoice.APPROVED
+                match_history, user_id, MatchHistory.ApprovalChoice.APPROVED
             )
-            partner_approval = self.history_service.get_partner_approval(match_history, user_pk)
+            partner_approval = self.history_service.get_partner_approval(match_history, user_id)
 
             # property에 반영
             if partner_approval == MatchHistory.ApprovalChoice.APPROVED:
@@ -356,13 +357,13 @@ class MatchingService:
 
     # ==================== 거절 ====================
     # status 2에서 상대 프로필을 보고 거절 (cancel과 동일)
-    def reject(self, user_pk: int) -> dict:
-        return self.cancel_matching(user_pk)
+    def reject(self, user_id: int) -> dict:
+        return self.cancel_matching(user_id)
 
     # ==================== 연락처 조회 ====================
     # Account 완료시 연동 필요 !!!
-    def get_contact(self, user_pk: int) -> dict:
-        property_obj = Property.objects.filter(user_pk=user_pk).last()
+    def get_contact(self, user_id: int) -> dict:
+        property_obj = Property.objects.filter(user_id=user_id).last()
 
         if not property_obj:
             return {"success": False, "error": "profile_not_found"}
@@ -381,24 +382,24 @@ class MatchingService:
                 "match_status": current_status
             }
 
-        match_history = self.history_service.get_by_status(user_pk, current_status)
+        match_history = self.history_service.get_by_status(user_id, current_status)
         if not match_history:
             return {"success": False, "error": "match_history_not_found"}
 
-        partner_pk = self.history_service.get_partner_pk(match_history, user_pk)
-        partner_property = Property.objects.filter(user_pk=partner_pk).last()
+        partner_id = self.history_service.get_partner_id(match_history, user_id)
+        partner_property = Property.objects.filter(user_id=partner_id).last()
 
         return {
             "success": True,
             "match_status": current_status,
-            "partner_pk": partner_pk,
+            "partner_id": partner_id,
             "partner_nickname": partner_property.nickname if partner_property else None
         }
 
     # ==================== 재매칭 ====================
-    def rematch(self, user_pk: int) -> dict:
+    def rematch(self, user_id: int) -> dict:
         # 현재 상태 확인 (락 없이)
-        property_obj = Property.objects.filter(user_pk=user_pk).last()
+        property_obj = Property.objects.filter(user_id=user_id).last()
 
         if not property_obj:
             return {"success": False, "error": "profile_not_found"}
@@ -416,7 +417,7 @@ class MatchingService:
 
         # status 4: 트랜잭션으로 처리 (상대방 상태 변경 필요)
         if current_status == Property.MatchStatusChoice.BOTH_APPROVED:
-            return self._rematch_from_both_approved(user_pk)
+            return self._rematch_from_both_approved(user_id)
 
         return {
             "success": False,
@@ -424,26 +425,26 @@ class MatchingService:
             "match_status": current_status
         }
 
-    def _rematch_from_both_approved(self, user_pk: int) -> dict:
+    def _rematch_from_both_approved(self, user_id: int) -> dict:
         with transaction.atomic():
             # match_history 먼저 락
             match_history = MatchHistory.objects.select_for_update().filter(
-                Q(user_a_pk=user_pk) | Q(user_b_pk=user_pk),
+                Q(user_a_id=user_id) | Q(user_b_id=user_id),
                 final_match_status=MatchHistory.ResultStatus.SUCCESS
             ).order_by('-matched_at').first()
 
             if not match_history:
                 return {"success": False, "error": "match_history_not_found"}
 
-            # 두 property를 pk 순서대로 락 (데드락 방지)
-            user_a_pk = match_history.user_a_pk
-            user_b_pk = match_history.user_b_pk
+            # 두 property를 id 순서대로 락 (데드락 방지)
+            user_a_id = match_history.user_a_id
+            user_b_id = match_history.user_b_id
 
-            prop_a = Property.objects.select_for_update().filter(user_pk=user_a_pk).last()
-            prop_b = Property.objects.select_for_update().filter(user_pk=user_b_pk).last()
+            prop_a = Property.objects.select_for_update().filter(user_id=user_a_id).last()
+            prop_b = Property.objects.select_for_update().filter(user_id=user_b_id).last()
 
-            my_prop = prop_a if user_pk == user_a_pk else prop_b
-            partner_prop = prop_b if user_pk == user_a_pk else prop_a
+            my_prop = prop_a if user_id == user_a_id else prop_b
+            partner_prop = prop_b if user_id == user_a_id else prop_a
 
             if not my_prop:
                 return {"success": False, "error": "profile_not_found"}

@@ -109,7 +109,7 @@ class CustomUser(AbstractBaseUser, PermissionsMixin):
     name = models.CharField(max_length=100)
     student_id = models.CharField(max_length=20, blank=True, null=True)
     phone_number = models.CharField(max_length=20, blank=True, null=True)
-
+    nickname = models.CharField(max_length=20)
     # Profile Information (managed by our service)
     birth_year = models.IntegerField(blank=True, null=True)
     gender = models.CharField(

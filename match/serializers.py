@@ -6,7 +6,7 @@ class PropertySerializer(serializers.ModelSerializer):
     class Meta:
         model = Property
         fields = '__all__'
-        read_only_fields = ['property_id', 'created_at', 'user_pk', "nickname", "student_num", "gender", 'match_status']
+        read_only_fields = ['property_id', 'created_at', 'user_id', "nickname", "student_id", "gender", 'match_status']
 
     def validate_dorm_building(self, value):
         allowed_buildings = ['G', 'I', 'S', 'T']
@@ -22,7 +22,6 @@ class PropertySerializer(serializers.ModelSerializer):
             raise serializers.ValidationError("최소 입주 기간은 1학기에서 3학기 사이여야 합니다.")
         return value
 
-
 class SurveySerializer(serializers.ModelSerializer):
     REQUIRED_KEYS = {
         'time_1', 'time_2', 'time_3', 'time_4',
@@ -35,7 +34,7 @@ class SurveySerializer(serializers.ModelSerializer):
     class Meta:
         model = Survey
         fields = '__all__'
-        read_only_fields = ['survey_id', 'created_at', 'user_pk', 'scores', 'badges']
+        read_only_fields = ['survey_id', 'created_at', 'user_id', 'scores', 'badges']
 
     def validate_surveys(self, value):
         if not isinstance(value, dict):

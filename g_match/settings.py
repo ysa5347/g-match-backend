@@ -88,11 +88,11 @@ WSGI_APPLICATION = 'g_match.wsgi.application'
 DATABASES = {
     'default': {
         'ENGINE': 'django.db.backends.mysql',
-        'NAME': os.getenv('ACC_DB_NAME'),
-        'USER': os.getenv('ACC_DB_USER'),
-        'PASSWORD': os.getenv('ACC_DB_PASSWORD'),
-        'HOST': os.getenv('ACC_DB_HOST'),
-        'PORT': os.getenv('ACC_DB_PORT'),
+        'NAME': os.getenv('DB_NAME'),
+        'USER': os.getenv('DB_USER'),
+        'PASSWORD': os.getenv('DB_PASSWORD'),
+        'HOST': os.getenv('DB_HOST'),
+        'PORT': os.getenv('DB_PORT'),
     }
 }
 

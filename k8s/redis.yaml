@@ -81,7 +81,7 @@ spec:
 apiVersion: v1
 kind: Service
 metadata:
-  name: g-match-redis
+  name: redis
   namespace: g-match
   labels:
     app: redis
