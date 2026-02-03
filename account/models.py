@@ -93,7 +93,7 @@ class CustomUser(AbstractBaseUser, PermissionsMixin):
     email = models.EmailField(
         unique=True,
         validators=[EmailValidator()],
-        help_text='GIST email address (@gist.ac.kr)'
+        help_text='GIST email address (@gist.ac.kr or @gm.gist.ac.kr)'
     )
 
     # GIST IdP OIDC identifier (sub claim)
@@ -145,7 +145,7 @@ class CustomUser(AbstractBaseUser, PermissionsMixin):
 
     @property
     def is_gist_email(self):
-        return self.email.endswith('@gist.ac.kr')
+        return self.email.endswith('@gist.ac.kr') or self.email.endswith('@gm.gist.ac.kr')
 
     @property
     def is_oidc_user(self):
