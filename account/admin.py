@@ -5,7 +5,7 @@ from .models import CustomUser, Agreement
 
 @admin.register(CustomUser)
 class CustomUserAdmin(BaseUserAdmin):
-    list_display = ['email', 'name', 'uid', 'is_active', 'is_staff', 'date_joined']
+    list_display = ['email', 'name', 'user_id', 'is_active', 'is_staff', 'date_joined']
     list_filter = ['is_active', 'is_staff', 'gender', 'house']
     search_fields = ['email', 'name', 'student_id']
     ordering = ['-date_joined']
@@ -38,7 +38,7 @@ class CustomUserAdmin(BaseUserAdmin):
         }),
     )
 
-    readonly_fields = ['uid', 'date_joined', 'last_login']
+    readonly_fields = ['user_id', 'date_joined', 'last_login']
 
 
 @admin.register(Agreement)

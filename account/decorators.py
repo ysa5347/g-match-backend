@@ -8,8 +8,7 @@ def identity_check(view_func):
     """신원 확인 데코레이터"""
     @wraps(view_func)
     def wrapper(request, *args, **kwargs):
-        user_id = request.session.get('user_id')
-        if not user_id:
+        if not (hasattr(request, 'user') and request.user.is_authenticated):
             return JsonResponse({
                 'success': False,
                 'error': 'Identity check failed',
@@ -23,12 +22,12 @@ def login_required(view_func):
     """
     로그인 필수 데코레이터 (DRF 뷰용)
 
-    세션에 user_id가 없으면 401 Unauthorized 반환
+    Django AuthenticationMiddleware가 설정한 request.user를 확인합니다.
+    인증되지 않은 사용자는 401 Unauthorized를 반환합니다.
     """
     @wraps(view_func)
     def wrapper(request, *args, **kwargs):
-        user_id = request.session.get('user_id')
-        if not user_id:
+        if not (hasattr(request, 'user') and request.user.is_authenticated):
             return Response({
                 'success': False,
                 'error': 'Login required',

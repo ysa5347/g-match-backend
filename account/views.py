@@ -118,6 +118,7 @@ def oidc_callback_view(request):
     처리 완료 후 F/E Auth Callback 페이지로 리다이렉트합니다.
     """
     from django.conf import settings as django_settings
+    from django.contrib.auth import login as auth_login
     from urllib.parse import urlencode
 
     frontend_callback_url = django_settings.FRONTEND_AUTH_CALLBACK_URL
@@ -171,9 +172,8 @@ def oidc_callback_view(request):
             user.phone_number = user_info.get('phone_number') or user.phone_number
             user.save()
 
-            # 세션 생성
-            request.session['user_id'] = str(user.uid)
-            request.session.cycle_key()
+            # Django auth 로그인 (SESSION_KEY에 user pk 저장)
+            auth_login(request, user)
 
             # F/E로 리다이렉트 (기존 사용자)
             params = {'is_new_user': 'false'}
@@ -422,8 +422,7 @@ def user_info_view(request):
     사용자 정보 조회/수정
     GET/POST/PUT /api/v1alpha1/account/info
     """
-    user_id = request.session.get('user_id')
-    user = CustomUser.objects.get(uid=user_id)
+    user = request.user
 
     if request.method == 'GET':
         serializer = UserInfoSerializer(user)
@@ -716,17 +715,17 @@ def registration_basic_info_view(request):
 
         # 세션 삭제 (회원가입 완료)
         from django.core.cache import cache
+        from django.contrib.auth import login as auth_login
         cache.delete(f"registration:{reg_sid}")
 
-        # 로그인 세션 생성
-        request.session['user_id'] = str(user.uid)
-        request.session.cycle_key()
+        # Django auth 로그인 (SESSION_KEY에 user pk 저장)
+        auth_login(request, user)
 
         response = Response({
             'success': True,
             'message': '회원가입이 완료되었습니다.',
             'user': {
-                'uid': str(user.uid),
+                'user_id': str(user.user_id),
                 'email': user.email,
                 'name': user.name,
                 'student_id': user.student_id
