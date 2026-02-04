@@ -1,0 +1,71 @@
+---
+# Django Migration Job
+# Usage:
+#   kubectl apply -f k8s/migration-job.yaml
+#   kubectl wait --for=condition=complete job/g-match-migrate -n g-match --timeout=120s
+#   kubectl logs job/g-match-migrate -n g-match
+#
+# Re-run (delete old job first):
+#   kubectl delete job g-match-migrate -n g-match --ignore-not-found && kubectl apply -f k8s/migration-job.yaml
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: g-match-migrate
+  namespace: g-match
+  labels:
+    app: g-match
+    component: migration
+spec:
+  backoffLimit: 3
+  ttlSecondsAfterFinished: 300
+  template:
+    metadata:
+      labels:
+        app: g-match
+        component: migration
+    spec:
+      # Exclude control-plane node
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+            - matchExpressions:
+              - key: node-role.kubernetes.io/control-plane
+                operator: DoesNotExist
+      imagePullSecrets:
+      - name: ghcr-secret
+      restartPolicy: Never
+
+      initContainers:
+      - name: wait-for-mysql
+        image: busybox:1.35
+        command:
+        - sh
+        - -c
+        - |
+          until nc -z g-match-mysql 3306; do
+            echo "Waiting for MySQL..."
+            sleep 2
+          done
+          echo "MySQL is ready"
+
+      containers:
+      - name: migrate
+        image: ghcr.io/ysa5347/g-match-backend:latest
+        command:
+        - python
+        - manage.py
+        - migrate
+        - --noinput
+        envFrom:
+        - configMapRef:
+            name: g-match-config
+        - secretRef:
+            name: g-match-secret
+        resources:
+          requests:
+            memory: "128Mi"
+            cpu: "100m"
+          limits:
+            memory: "256Mi"
+            cpu: "200m"

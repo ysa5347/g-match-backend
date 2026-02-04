@@ -1,0 +1,225 @@
+---
+# Django Deployment
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: g-match-web
+  namespace: g-match
+  labels:
+    app: g-match
+    component: web
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: g-match
+      component: web
+  template:
+    metadata:
+      labels:
+        app: g-match
+        component: web
+    spec:
+      # Exclude control-plane node
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+            - matchExpressions:
+              - key: node-role.kubernetes.io/control-plane
+                operator: DoesNotExist
+      imagePullSecrets:
+      - name: ghcr-secret
+      initContainers:
+      # Wait for MySQL to be ready
+      - name: wait-for-mysql
+        image: busybox:1.35
+        command:
+        - sh
+        - -c
+        - |
+          until nc -z g-match-mysql 3306; do
+            echo "Waiting for MySQL..."
+            sleep 2
+          done
+          echo "MySQL is ready"
+        resources:
+          requests:
+            memory: "16Mi"
+            cpu: "10m"
+          limits:
+            memory: "32Mi"
+            cpu: "50m"
+
+      # Wait for Redis to be ready
+      - name: wait-for-redis
+        image: busybox:1.35
+        command:
+        - sh
+        - -c
+        - |
+          until nc -z redis 6379; do
+            echo "Waiting for Redis..."
+            sleep 2
+          done
+          echo "Redis is ready"
+        resources:
+          requests:
+            memory: "16Mi"
+            cpu: "10m"
+          limits:
+            memory: "32Mi"
+            cpu: "50m"
+
+      # Collect static files
+      - name: django-collectstatic
+        image: ghcr.io/ysa5347/g-match-backend:latest
+        command:
+        - python
+        - manage.py
+        - collectstatic
+        - --noinput
+        envFrom:
+        - configMapRef:
+            name: g-match-config
+        - secretRef:
+            name: g-match-secret
+        volumeMounts:
+        - name: static-files
+          mountPath: /app/staticfiles
+        resources:
+          requests:
+            memory: "128Mi"
+            cpu: "100m"
+          limits:
+            memory: "256Mi"
+            cpu: "300m"
+
+      containers:
+      - name: django
+        image: ghcr.io/ysa5347/g-match-backend:latest
+        ports:
+        - containerPort: 8000
+          name: http
+        envFrom:
+        - configMapRef:
+            name: g-match-config
+        - secretRef:
+            name: g-match-secret
+        volumeMounts:
+        - name: static-files
+          mountPath: /app/staticfiles
+        livenessProbe:
+          httpGet:
+            path: /api/v1alpha1/account/
+            port: 8000
+          initialDelaySeconds: 30
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 3
+        readinessProbe:
+          httpGet:
+            path: /api/v1alpha1/account/
+            port: 8000
+          initialDelaySeconds: 10
+          periodSeconds: 5
+          timeoutSeconds: 3
+          failureThreshold: 3
+        resources:
+          requests:
+            memory: "192Mi"
+            cpu: "150m"
+          limits:
+            memory: "384Mi"
+            cpu: "500m"
+
+      volumes:
+      - name: static-files
+        emptyDir: {}
+
+---
+# Django Service
+apiVersion: v1
+kind: Service
+metadata:
+  name: g-match-web
+  namespace: g-match
+  labels:
+    app: g-match
+    component: web
+spec:
+  type: ClusterIP
+  ports:
+  - port: 8000
+    targetPort: 8000
+    protocol: TCP
+    name: http
+  selector:
+    app: g-match
+    component: web
+
+---
+# HorizontalPodAutoscaler
+# Cluster total: 12GB (3x RPi4 4GB)
+# System reserved: ~1.6GB, infra pods (MySQL/Redis/Matcher): ~1GB
+# Available for Django: ~8.3GB (80% of usable)
+# Per pod limits: 384Mi → max ~6 pods within budget
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: g-match-web-hpa
+  namespace: g-match
+  labels:
+    app: g-match
+    component: web
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: g-match-web
+  minReplicas: 1
+  maxReplicas: 6
+  metrics:
+  - type: Resource
+    resource:
+      name: memory
+      target:
+        type: Utilization
+        averageUtilization: 80
+  - type: Resource
+    resource:
+      name: cpu
+      target:
+        type: Utilization
+        averageUtilization: 80
+  behavior:
+    scaleUp:
+      stabilizationWindowSeconds: 60
+      policies:
+      - type: Pods
+        value: 1
+        periodSeconds: 60
+    scaleDown:
+      stabilizationWindowSeconds: 300
+      policies:
+      - type: Pods
+        value: 1
+        periodSeconds: 120
+
+---
+# Traefik IngressRoute (CRD)
+# Cloudflare Tunnel → TCP://localhost:32159 → Traefik NodePort → IngressRoute → g-match-web
+apiVersion: traefik.io/v1alpha1
+kind: IngressRoute
+metadata:
+  name: g-match-ingressroute
+  namespace: g-match
+spec:
+  entryPoints:
+  - web
+  routes:
+  - match: Host(`api.g-match.org`)
+    kind: Rule
+    services:
+    - name: g-match-web
+      port: 8000
