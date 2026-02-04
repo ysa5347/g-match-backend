@@ -9,12 +9,12 @@ class UserInfoSerializer(serializers.ModelSerializer):
     class Meta:
         model = CustomUser
         fields = [
-            'uid', 'email', 'name', 'student_id', 'phone_number',
+            'user_id', 'email', 'name', 'student_id', 'phone_number',
             'gender', 'house', 'nickname',
             'is_oidc_user', 'date_joined'
         ]
         read_only_fields = [
-            'uid', 'email', 'name', 'student_id', 'phone_number',
+            'user_id', 'email', 'name', 'student_id', 'phone_number',
             'is_oidc_user', 'date_joined'
         ]
 
