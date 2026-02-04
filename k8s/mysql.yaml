@@ -14,7 +14,7 @@ spec:
   storageClassName: local-path  # k3s default storage class
 
 ---
-# MySQL Deployment
+# MySQL StatefulSet
 apiVersion: apps/v1
 kind: StatefulSet
 metadata:
@@ -25,8 +25,9 @@ metadata:
     component: database
 spec:
   replicas: 1
-  strategy:
-    type: Recreate  # Important for databases
+  serviceName: g-match-mysql
+  updateStrategy:
+    type: RollingUpdate
   selector:
     matchLabels:
       app: mysql
@@ -35,6 +36,14 @@ spec:
       labels:
         app: mysql
     spec:
+      # Exclude control-plane node
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+            - matchExpressions:
+              - key: node-role.kubernetes.io/control-plane
+                operator: DoesNotExist
       containers:
       - name: mysql
         image: mysql:8.0

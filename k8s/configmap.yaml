@@ -5,7 +5,7 @@ metadata:
   namespace: g-match
 data:
   DEBUG: "False"
-  ALLOWED_HOSTS: "api.g-match.local,localhost"
+  ALLOWED_HOSTS: "api.g-match.org,www.g-match.org,localhost"
 
   DB_NAME: "g-match"
   DB_USER: "django-server"

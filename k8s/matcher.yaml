@@ -21,11 +21,19 @@ spec:
         app: g-match
         component: edge-calculator
     spec:
+      # Exclude control-plane node
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+            - matchExpressions:
+              - key: node-role.kubernetes.io/control-plane
+                operator: DoesNotExist
       imagePullSecrets:
       - name: ghcr-secret
       containers:
       - name: edge-calculator
-        image: ghcr.io/ysa5347/g-match-backend-matcher:latest  # Replace OWNER
+        image: ghcr.io/ysa5347/g-match-backend-matcher:latest
         env:
         - name: SCRIPT_NAME
           value: "edge_calculator.py"
@@ -73,11 +81,11 @@ spec:
           value: "10"
         resources:
           requests:
-            memory: "128Mi"
-            cpu: "100m"
+            memory: "64Mi"
+            cpu: "50m"
           limits:
-            memory: "256Mi"
-            cpu: "200m"
+            memory: "128Mi"
+            cpu: "150m"
 
 ---
 # Match Scheduler Deployment
@@ -91,7 +99,7 @@ metadata:
     app: g-match
     component: scheduler
 spec:
-  replicas: 1  # Only one instance to prevent duplicate matches
+  replicas: 1
   selector:
     matchLabels:
       app: g-match
@@ -102,11 +110,19 @@ spec:
         app: g-match
         component: scheduler
     spec:
+      # Exclude control-plane node
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+            - matchExpressions:
+              - key: node-role.kubernetes.io/control-plane
+                operator: DoesNotExist
       imagePullSecrets:
       - name: ghcr-secret
       containers:
       - name: scheduler
-        image: ghcr.io/ysa5347/g-match-backend-matcher:latest  # Replace OWNER
+        image: ghcr.io/ysa5347/g-match-backend-matcher:latest
         env:
         - name: SCRIPT_NAME
           value: "match_scheduler.py"
@@ -156,8 +172,8 @@ spec:
           value: "80.0"
         resources:
           requests:
-            memory: "128Mi"
-            cpu: "100m"
+            memory: "64Mi"
+            cpu: "50m"
           limits:
-            memory: "256Mi"
-            cpu: "200m"
+            memory: "128Mi"
+            cpu: "150m"

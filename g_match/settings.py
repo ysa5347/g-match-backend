@@ -27,14 +27,9 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 SECRET_KEY = os.getenv('SECRET_KEY')
 
 # SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = True
+DEBUG = os.getenv('DEBUG', 'False').lower() in ('true', '1', 'yes')
 
-ALLOWED_HOSTS = [
-    'localhost',
-    'api.g-match.com',
-    'stage.api.g-match.com',
-    'dev.api.g-match.com'
-]
+ALLOWED_HOSTS = os.getenv('ALLOWED_HOSTS', 'localhost').split(',')
 
 # Application definition
 
@@ -149,7 +144,8 @@ CORS_ALLOWED_ORIGINS = [
     "http://127.0.0.1:3000",
     "http://localhost:8080",
     "http://127.0.0.1:8080",
-    "https://www.g-match.com"
+    "http://www.g-match.org",
+    "https://www.g-match.org",
 ]
 CORS_ALLOW_CREDENTIALS = True
 CORS_ALLOW_HEADERS = [
@@ -163,6 +159,18 @@ CORS_ALLOW_HEADERS = [
     'x-csrftoken',
     'x-requested-with',
     'x-registration-token',  # 회원가입 토큰 헤더
+]
+
+# Reverse Proxy Settings (Cloudflare Tunnel → Traefik → Django)
+# Cloudflare terminates TLS; internal traffic is HTTP
+SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
+USE_X_FORWARDED_HOST = True
+USE_X_FORWARDED_PORT = True
+
+# CSRF trusted origins (Cloudflare serves these domains over HTTPS)
+CSRF_TRUSTED_ORIGINS = [
+    'https://api.g-match.org',
+    'https://www.g-match.org',
 ]
 
 # Session Settings
