@@ -362,7 +362,8 @@ def logout_view(request):
     로그아웃
     POST /api/v1alpha1/account/auth/logout
     """
-    request.session.flush()
+    from django.contrib.auth import logout as auth_logout
+    auth_logout(request)
 
     return Response({
         'success': True,
@@ -535,7 +536,7 @@ def registration_main(request):
             'oidc_authenticated': 'OIDC 인증 완료',
             'agreed': '약관 동의 완료'
         },
-        'note': '사용자 정보(이메일, 이름, 학번, 전화번호)는 GIST IdP에서 제공받습니다. 성별은 필수, 기숙사 동은 선택적으로 입력합니다.'
+        'note': '사용자 정보(이메일, 이름, 학번, 전화번호)는 GIST IdP에서 제공받습니다. 성별은 필수, 닉네임은 선택적으로 입력합니다.'
     }, status=status.HTTP_200_OK)
 
 
@@ -608,7 +609,7 @@ def verify_code_view(request):
 
     약관 동의(/registration/agree) 완료 후 호출해야 합니다.
     - gender: 필수 (M 또는 F)
-    - house: 선택
+    - nickname: 선택 (최대 20자)
     ''',
     request_body=BasicInfoSerializer,
     manual_parameters=[
@@ -673,11 +674,11 @@ def registration_basic_info_view(request):
                     'choices': ['M', 'F'],
                     'description': '성별 (M: 남성, F: 여성) - 필수'
                 },
-                'house': {
+                'nickname': {
                     'type': 'string',
                     'required': False,
-                    'max_length': 50,
-                    'description': '기숙사 동 (예: A동) - 선택'
+                    'max_length': 20,
+                    'description': '닉네임 (최대 20자) - 선택'
                 }
             },
             'note': 'email, name, student_id, phone_number는 GIST IdP에서 제공됩니다. gender는 필수 입력 항목입니다.'

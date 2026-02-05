@@ -1,6 +1,6 @@
 from django.db import models
 from django.contrib.auth import get_user_model
-
+import uuid
 User = get_user_model()
 
 class Property(models.Model):
@@ -20,7 +20,7 @@ class Property(models.Model):
 
     property_id = models.BigAutoField(primary_key=True)
     created_at = models.DateTimeField(auto_now_add=True)
-    user_id = models.UUIDField()  # 논리적 연결 (FK 제약 없음)
+    user_id = models.UUIDField(default=uuid.uuid4)  # 논리적 연결 (FK 제약 없음)
 
     # Account DB에서 받아올 내용
     nickname = models.CharField(max_length=20)
@@ -29,7 +29,7 @@ class Property(models.Model):
 
     is_smoker = models.BooleanField()
 
-    dorm_building = models.CharField(max_length=1)  # 'G', 'I' ...
+    dorm_building = models.CharField(max_length=1)  # 'G', 'I' ... 'N'
     stay_period = models.SmallIntegerField()  # 최소 입주 기간을 나타내는 열 ...
 
     has_fridge = models.BooleanField()

@@ -48,12 +48,14 @@ INSTALLED_APPS = [
     'match',
 ]
 
+CSRF_ENABLED = os.getenv('CSRF_ENABLED', 'True').lower() in ('true', '1', 'yes')
+
 MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',
     'corsheaders.middleware.CorsMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
     'django.middleware.common.CommonMiddleware',
-    'django.middleware.csrf.CsrfViewMiddleware',
+    *(['django.middleware.csrf.CsrfViewMiddleware'] if CSRF_ENABLED else []),
     'django.contrib.auth.middleware.AuthenticationMiddleware',
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
@@ -141,6 +143,7 @@ AUTH_USER_MODEL = 'account.CustomUser'
 # CORS Settings
 CORS_ALLOWED_ORIGINS = [
     "http://localhost:3000",
+    "http://localhost:8080",
     "http://127.0.0.1:3000",
     "http://localhost:8080",
     "http://127.0.0.1:8080",
@@ -167,11 +170,16 @@ SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
 USE_X_FORWARDED_HOST = True
 USE_X_FORWARDED_PORT = True
 
-# CSRF trusted origins (Cloudflare serves these domains over HTTPS)
-CSRF_TRUSTED_ORIGINS = [
-    'https://api.g-match.org',
-    'https://www.g-match.org',
-]
+# CSRF Settings
+# Dev 환경: CSRF_ENABLED=False (.env) → 미들웨어 제외, 쿠키/trusted origins 불필요
+# Prod 환경: CSRF_ENABLED=True (기본값) → 미들웨어 활성, axios가 csrftoken 쿠키 → X-CSRFToken 헤더
+if CSRF_ENABLED:
+    CSRF_TRUSTED_ORIGINS = [
+        'https://api.g-match.org',
+        'https://www.g-match.org',
+    ]
+    CSRF_COOKIE_HTTPONLY = False  # F/E(axios)가 쿠키를 읽을 수 있어야 함
+    CSRF_COOKIE_SAMESITE = 'Lax'
 
 # Session Settings
 # SESSION_ENGINE = 'django.contrib.sessions.backends.db'
@@ -197,6 +205,8 @@ CACHES = {
 }
 
 # REST Framework Settings
+# DRF의 SessionAuthentication은 Django 미들웨어와 별개로 자체 CSRF 검증을 수행함.
+# CSRF_ENABLED=False인 환경에서는 CSRF를 강제하지 않는 커스텀 인증 클래스를 사용.
 REST_FRAMEWORK = {
     'DEFAULT_RENDERER_CLASSES': [
         'rest_framework.renderers.JSONRenderer',
@@ -204,6 +214,11 @@ REST_FRAMEWORK = {
     ],
     'DEFAULT_PARSER_CLASSES': [
         'rest_framework.parsers.JSONParser',
+    ],
+    'DEFAULT_AUTHENTICATION_CLASSES': [
+        'rest_framework.authentication.SessionAuthentication',
+    ] if CSRF_ENABLED else [
+        'g_match.authentication.CsrfExemptSessionAuthentication',
     ],
 }
 

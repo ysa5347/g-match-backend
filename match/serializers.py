@@ -9,10 +9,10 @@ class PropertySerializer(serializers.ModelSerializer):
         read_only_fields = ['property_id', 'created_at', 'user_id', "nickname", "student_id", "gender", 'match_status']
 
     def validate_dorm_building(self, value):
-        allowed_buildings = ['G', 'I', 'S', 'T']
+        allowed_buildings = ['G', 'I', 'S', 'T', 'A']
         if value not in allowed_buildings:
             raise serializers.ValidationError(
-                f"기숙사 동은 {', '.join(allowed_buildings)} 중 하나여야 합니다."
+                f"기숙사 동은 G, I, S, T 중 하나여야 합니다."
             )
         return value
 
@@ -24,15 +24,9 @@ class PropertySerializer(serializers.ModelSerializer):
 
 class ProfilePropertySerializer(serializers.ModelSerializer):
     """프로필 표시용 Property 시리얼라이저 (민감정보 제외)"""
-    student_id = serializers.SerializerMethodField()
-
     class Meta:
         model = Property
         exclude = ['property_id', 'user_id', 'created_at', 'match_status']
-
-    def get_student_id(self, obj):
-        """학번 앞 2자리만 반환 (예: 24)"""
-        return int(str(obj.student_id)[:2])
 
 
 class ProfileSurveySerializer(serializers.ModelSerializer):
