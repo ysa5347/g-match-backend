@@ -362,7 +362,8 @@ def logout_view(request):
     로그아웃
     POST /api/v1alpha1/account/auth/logout
     """
-    request.session.flush()
+    from django.contrib.auth import logout as auth_logout
+    auth_logout(request)
 
     return Response({
         'success': True,

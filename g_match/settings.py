@@ -144,10 +144,22 @@ AUTH_USER_MODEL = 'account.CustomUser'
 # CORS Settings
 CORS_ALLOWED_ORIGINS = [
     "http://localhost:3000",
+    "http://localhost:8080",
     "http://127.0.0.1:3000",
-    "https://www.g-match.com"
+    "http://127.0.0.1:8080",
+    "http://www.g-match.org",
+    "https://www.g-match.org",
 ]
 CORS_ALLOW_CREDENTIALS = True
+CORS_ALLOW_HEADERS = [
+    "accept",
+    "authorization",
+    "content-type",
+    "origin",
+    "x-csrftoken",
+    "x-requested-with",
+    "x-registration-token",
+]
 
 # Session Settings
 # SESSION_ENGINE = 'django.contrib.sessions.backends.db'
