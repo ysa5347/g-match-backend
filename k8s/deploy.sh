@@ -3,13 +3,16 @@
 # G-Match CD Deploy Script (lightweight, no external tools needed)
 #
 # Usage:
-#   ./deploy.sh                    # Deploy all (django + matcher)
-#   ./deploy.sh django             # Deploy django only
+#   ./deploy.sh                    # Deploy all (infra + django + matcher)
+#   ./deploy.sh django             # Deploy django only (migrate + rollout)
 #   ./deploy.sh matcher            # Deploy matcher only
+#   ./deploy.sh infra              # Deploy mysql + redis only
+#   ./deploy.sh mysql              # Deploy mysql only
+#   ./deploy.sh redis              # Deploy redis only
 #   ./deploy.sh migrate            # Run migration only
 #   ./deploy.sh status             # Show deployment status
-#   ./deploy.sh TAG                # Deploy all with specific image tag
 #   ./deploy.sh django sha-abc123  # Deploy django with specific tag
+#   ./deploy.sh TAG                # Deploy all with specific image tag
 # =============================================================================
 
 set -euo pipefail
@@ -34,6 +37,13 @@ err()  { echo -e "${RED}[ERROR]${NC} $*" >&2; }
 # Functions
 # ---------------------------------------------------
 
+ensure_namespace() {
+    if ! kubectl get namespace "$NAMESPACE" &>/dev/null; then
+        log "Creating namespace: ${NAMESPACE}"
+        kubectl create namespace "$NAMESPACE"
+    fi
+}
+
 show_status() {
     log "=== Deployment Status ==="
     echo ""
@@ -41,7 +51,34 @@ show_status() {
     echo ""
     kubectl get deployments -n "$NAMESPACE"
     echo ""
+    kubectl get statefulsets -n "$NAMESPACE" 2>/dev/null || true
+    echo ""
     kubectl get jobs -n "$NAMESPACE" 2>/dev/null || true
+    echo ""
+    kubectl get pvc -n "$NAMESPACE" 2>/dev/null || true
+}
+
+deploy_mysql() {
+    log "Deploying MySQL..."
+    kubectl apply -f "${SCRIPT_DIR}/mysql.yaml"
+
+    log "Waiting for MySQL to be ready..."
+    kubectl rollout status "statefulset/g-match-mysql" -n "$NAMESPACE" --timeout=300s
+    log "MySQL deployed successfully"
+}
+
+deploy_redis() {
+    log "Deploying Redis..."
+    kubectl apply -f "${SCRIPT_DIR}/redis.yaml"
+
+    log "Waiting for Redis to be ready..."
+    kubectl rollout status "deployment/g-match-redis" -n "$NAMESPACE" --timeout=120s
+    log "Redis deployed successfully"
+}
+
+deploy_infra() {
+    deploy_mysql
+    deploy_redis
 }
 
 run_migrate() {
@@ -118,6 +155,21 @@ case "$TARGET" in
     migrate)
         run_migrate "$TAG"
         ;;
+    mysql)
+        ensure_namespace
+        deploy_mysql
+        show_status
+        ;;
+    redis)
+        ensure_namespace
+        deploy_redis
+        show_status
+        ;;
+    infra)
+        ensure_namespace
+        deploy_infra
+        show_status
+        ;;
     django)
         run_migrate "$TAG"
         deploy_django "$TAG"
@@ -128,10 +180,8 @@ case "$TARGET" in
         show_status
         ;;
     all)
-        # If first arg looks like a tag (not a command), use it
-        if [[ "$TARGET" != "all" ]] && [[ ! "$TARGET" =~ ^(status|migrate|django|matcher)$ ]]; then
-            TAG="$TARGET"
-        fi
+        ensure_namespace
+        deploy_infra
         run_migrate "$TAG"
         deploy_django "$TAG"
         deploy_matcher "$TAG"
@@ -140,6 +190,8 @@ case "$TARGET" in
     *)
         # Treat unknown first arg as a tag for full deploy
         TAG="$TARGET"
+        ensure_namespace
+        deploy_infra
         run_migrate "$TAG"
         deploy_django "$TAG"
         deploy_matcher "$TAG"
