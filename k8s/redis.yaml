@@ -35,6 +35,14 @@ spec:
       labels:
         app: redis
     spec:
+      # Exclude control-plane node
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+            - matchExpressions:
+              - key: node-role.kubernetes.io/control-plane
+                operator: DoesNotExist
       containers:
       - name: redis
         image: redis:7.2-alpine

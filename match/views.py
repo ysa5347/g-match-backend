@@ -8,7 +8,7 @@ import redis
 from account.decorators import identity_check
 from account.models import CustomUser
 from .models import Property, Survey
-from .serializers import PropertySerializer, SurveySerializer
+from .serializers import PropertySerializer, SurveySerializer, ProfilePropertySerializer, ProfileSurveySerializer
 from .profile_service import InsightService
 from .match_service import MatchingService
 
@@ -46,8 +46,8 @@ class ProfileViewSet(viewsets.ViewSet):
             "success": True,
             "profile_status": self.PROFILE_STATUS_COMPLETE,
             "user_id": user.user_id,
-            "property": PropertySerializer(property_obj).data,
-            "survey": SurveySerializer(survey_obj).data,
+            "property": ProfilePropertySerializer(property_obj).data,
+            "survey": ProfileSurveySerializer(survey_obj).data,
         }, status=status.HTTP_200_OK)
 
     @action(detail=False, methods=['get', 'post'], url_path='property')
@@ -183,8 +183,8 @@ class MatchingViewSet(viewsets.ViewSet):
             "match_id": result["match_id"],
             "compatibility_score": result["compatibility_score"],
             "partner": {
-                "property": PropertySerializer(result["partner_property"]).data,
-                "survey": SurveySerializer(result["partner_survey"]).data
+                "property": ProfilePropertySerializer(result["partner_property"]).data,
+                "survey": ProfileSurveySerializer(result["partner_survey"]).data
             }
         }, status=status.HTTP_200_OK)
 
@@ -204,7 +204,6 @@ class MatchingViewSet(viewsets.ViewSet):
         status_code = status.HTTP_200_OK if result["success"] else self._get_status_code(result.get("error"))
         return Response(result, status=status_code)
 
-    # ACCOUNT와 연동 필요
     @action(detail=False, methods=['get'], url_path='contact')
     @identity_check
     def contact(self, request):
@@ -213,6 +212,13 @@ class MatchingViewSet(viewsets.ViewSet):
 
         if not result["success"]:
             return Response(result, status=self._get_status_code(result.get("error")))
+
+        partner_user = CustomUser.objects.filter(uid=result["partner_id"]).first()
+        if not partner_user:
+            return Response({
+                "success": False,
+                "error": "partner_data_fetch_failed"
+            }, status=status.HTTP_404_NOT_FOUND)
 
         return Response({
             "success": True,

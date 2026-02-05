@@ -10,6 +10,7 @@ resources:
   - mysql.yaml
   - redis.yaml
   - django.yaml
+  - matcher.yaml
 
 # Common labels
 commonLabels:
@@ -20,4 +21,7 @@ commonLabels:
 images:
   - name: ghcr.io/ysa5347/g-match-backend
     newName: ghcr.io/ysa5347/g-match-backend
+    newTag: latest
+  - name: ghcr.io/ysa5347/g-match-backend-matcher
+    newName: ghcr.io/ysa5347/g-match-backend-matcher
     newTag: latest
