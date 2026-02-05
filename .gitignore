@@ -23,8 +23,19 @@ venv.bak/
 *.swp
 *.swo
 
+# Database
+*/migrations/
+
 # macOS
 .DS_Store
 
 # Static
 staticfiles/
+
+claude
+migrations
+CLAUDE/
+API_list.csv
+
+matcher/k8s
+matcher/scripts

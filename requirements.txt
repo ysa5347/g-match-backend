@@ -1,10 +1,27 @@
 asgiref==3.11.0
 Django==5.2.10
+django-cors-headers==4.6.0
 django-environ==0.11.2
+django-redis==5.4.0
 djangorestframework==3.16.1
 dotenv==0.9.9
+drf-yasg==1.21.8
+inflection==0.5.1
 Markdown==3.10
-mysqlclient==2.2.1
+mysqlclient==2.2.7          # c 컴파일러 문제로 최신버전 사용
+packaging==26.0
 python-dotenv==1.2.1
+pytz==2025.2
+PyYAML==6.0.3
 redis==5.0.1
 sqlparse==0.5.5
+uritemplate==4.2.0
+
+# AWS SES Email Backend
+django-ses==4.3.0
+boto3==1.35.96
+
+# OIDC Authentication
+PyJWT==2.8.0
+cryptography==41.0.7
+requests==2.31.0

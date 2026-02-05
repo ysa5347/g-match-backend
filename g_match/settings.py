@@ -27,10 +27,9 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 SECRET_KEY = os.getenv('SECRET_KEY')
 
 # SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = True
+DEBUG = os.getenv('DEBUG', 'False').lower() in ('true', '1', 'yes')
 
-ALLOWED_HOSTS = []
-
+ALLOWED_HOSTS = os.getenv('ALLOWED_HOSTS', 'localhost').split(',')
 
 # Application definition
 
@@ -41,13 +40,22 @@ INSTALLED_APPS = [
     'django.contrib.sessions',
     'django.contrib.messages',
     'django.contrib.staticfiles',
+    'rest_framework',
+    'corsheaders',
+    'django_redis',
+    'drf_yasg',
+    'account',
+    'match',
 ]
+
+CSRF_ENABLED = os.getenv('CSRF_ENABLED', 'True').lower() in ('true', '1', 'yes')
 
 MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',
+    'corsheaders.middleware.CorsMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
     'django.middleware.common.CommonMiddleware',
-    'django.middleware.csrf.CsrfViewMiddleware',
+    *(['django.middleware.csrf.CsrfViewMiddleware'] if CSRF_ENABLED else []),
     'django.contrib.auth.middleware.AuthenticationMiddleware',
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
@@ -128,3 +136,186 @@ STATIC_URL = 'static/'
 # https://docs.djangoproject.com/en/5.2/ref/settings/#default-auto-field
 
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
+
+# Custom User Model
+AUTH_USER_MODEL = 'account.CustomUser'
+
+# CORS Settings
+CORS_ALLOWED_ORIGINS = [
+    "http://localhost:3000",
+    "http://localhost:8080",
+    "http://127.0.0.1:3000",
+    "http://localhost:8080",
+    "http://127.0.0.1:8080",
+    "http://www.g-match.org",
+    "https://www.g-match.org",
+]
+CORS_ALLOW_CREDENTIALS = True
+CORS_ALLOW_HEADERS = [
+    'accept',
+    'accept-encoding',
+    'authorization',
+    'content-type',
+    'dnt',
+    'origin',
+    'user-agent',
+    'x-csrftoken',
+    'x-requested-with',
+    'x-registration-token',  # 회원가입 토큰 헤더
+]
+
+# Reverse Proxy Settings (Cloudflare Tunnel → Traefik → Django)
+# Cloudflare terminates TLS; internal traffic is HTTP
+SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
+USE_X_FORWARDED_HOST = True
+USE_X_FORWARDED_PORT = True
+
+# CSRF Settings
+# Dev 환경: CSRF_ENABLED=False (.env) → 미들웨어 제외, 쿠키/trusted origins 불필요
+# Prod 환경: CSRF_ENABLED=True (기본값) → 미들웨어 활성, axios가 csrftoken 쿠키 → X-CSRFToken 헤더
+if CSRF_ENABLED:
+    CSRF_TRUSTED_ORIGINS = [
+        'https://api.g-match.org',
+        'https://www.g-match.org',
+    ]
+    CSRF_COOKIE_HTTPONLY = False  # F/E(axios)가 쿠키를 읽을 수 있어야 함
+    CSRF_COOKIE_SAMESITE = 'Lax'
+
+# Session Settings
+# SESSION_ENGINE = 'django.contrib.sessions.backends.db'
+SESSION_ENGINE = 'django.contrib.sessions.backends.cached_db'
+SESSION_CACHE_ALIAS = 'default'
+SESSION_COOKIE_NAME = 'sessionid'
+SESSION_COOKIE_AGE = 1209600  # 2 weeks
+SESSION_COOKIE_HTTPONLY = True
+SESSION_COOKIE_SAMESITE = 'Lax'
+
+# Redis Cache Settings
+REDIS_HOST = os.getenv('REDIS_HOST', '127.0.0.1')
+REDIS_PORT = os.getenv('REDIS_PORT', '6379')
+REDIS_PASSWORD = os.getenv('REDIS_PASSWORD', '')
+CACHES = {
+    "default": {
+        "BACKEND": "django_redis.cache.RedisCache",
+        "LOCATION": f"redis://:{REDIS_PASSWORD}@{REDIS_HOST}:{REDIS_PORT}/1",  # 패스워드 추가
+        "OPTIONS": {
+            "CLIENT_CLASS": "django_redis.client.DefaultClient",
+        }
+    }
+}
+
+# REST Framework Settings
+# DRF의 SessionAuthentication은 Django 미들웨어와 별개로 자체 CSRF 검증을 수행함.
+# CSRF_ENABLED=False인 환경에서는 CSRF를 강제하지 않는 커스텀 인증 클래스를 사용.
+REST_FRAMEWORK = {
+    'DEFAULT_RENDERER_CLASSES': [
+        'rest_framework.renderers.JSONRenderer',
+        'rest_framework.renderers.BrowsableAPIRenderer',
+    ],
+    'DEFAULT_PARSER_CLASSES': [
+        'rest_framework.parsers.JSONParser',
+    ],
+    'DEFAULT_AUTHENTICATION_CLASSES': [
+        'rest_framework.authentication.SessionAuthentication',
+    ] if CSRF_ENABLED else [
+        'g_match.authentication.CsrfExemptSessionAuthentication',
+    ],
+}
+
+# Email Settings (AWS SES for GIST email verification)
+EMAIL_BACKEND = 'django_ses.SESBackend'
+
+# AWS Credentials
+AWS_ACCESS_KEY_ID = os.getenv('AWS_ACCESS_KEY_ID')
+AWS_SECRET_ACCESS_KEY = os.getenv('AWS_SECRET_ACCESS_KEY')
+AWS_SES_REGION_NAME = os.getenv('AWS_SES_REGION_NAME', 'ap-northeast-2')
+AWS_SES_REGION_ENDPOINT = f'email.{AWS_SES_REGION_NAME}.amazonaws.com'
+
+# Email configuration
+DEFAULT_FROM_EMAIL = os.getenv('DEFAULT_FROM_EMAIL', 'noreply@g-match.com')
+SERVER_EMAIL = DEFAULT_FROM_EMAIL
+
+# Development: use console backend for testing
+if DEBUG:
+    EMAIL_BACKEND = 'django.core.mail.backends.console.EmailBackend'
+
+
+# ==============================================
+# GIST IdP (인포팀 계정) OIDC Settings
+# Source: CLAUDE/OIDC_info.json (.well-known/openid-configuration)
+# ==============================================
+GIST_OIDC = {
+    # OIDC Provider URLs (from .well-known/openid-configuration)
+    'ISSUER': 'https://account.gistory.me',
+    'AUTHORIZATION_ENDPOINT': 'https://account.gistory.me/authorize',
+    'TOKEN_ENDPOINT': 'https://api.account.gistory.me/oauth/token',
+    'USERINFO_ENDPOINT': 'https://api.account.gistory.me/oauth/userinfo',
+    'JWKS_URI': 'https://api.account.gistory.me/oauth/certs',
+
+    # Client Credentials
+    'CLIENT_ID': os.getenv('GIST_OIDC_CLIENT_ID', ''),
+    'CLIENT_SECRET': os.getenv('GIST_OIDC_CLIENT_SECRET', ''),
+
+    # Redirect URIs
+    'REDIRECT_URI': os.getenv('GIST_OIDC_REDIRECT_URI', ''),
+    'POST_LOGOUT_REDIRECT_URI': os.getenv('GIST_OIDC_POST_LOGOUT_REDIRECT_URI', ''),
+
+    # OIDC Scopes (from scope_supported)
+    # - openid: 필수
+    # - profile: 프로필 정보
+    # - email: 이메일
+    # - phone_number: 전화번호 (주의: 'phone'이 아님)
+    # - student_id: 학번
+    # - offline_access: Refresh Token 발급 (선택)
+    'SCOPES': ['openid', 'profile', 'email', 'phone_number', 'student_id'],
+
+    # Token Settings
+    # Note: IdP uses ES256 (ECDSA) for ID Token signing, not RS256
+    'ID_TOKEN_SIGNING_ALG': 'ES256',
+    'ID_TOKEN_ISSUER_VALIDATION': True,
+    'ID_TOKEN_AUDIENCE_VALIDATION': True,
+
+    # Session Settings
+    'STATE_TTL': 600,  # 10 minutes for state parameter validity
+    'NONCE_TTL': 600,  # 10 minutes for nonce validity
+
+    # Claim Mapping (from claims_supported)
+    # IdP claims: sub, profile, email, phone_number, student_id
+    'CLAIM_MAPPING': {
+        'sub': 'sub',
+        'email': 'email',
+        'profile': 'profile',
+        'student_id': 'student_id',
+        'phone_number': 'phone_number',
+    },
+}
+
+# Frontend URL Configuration
+# OIDC 콜백 처리 후 F/E로 리다이렉트할 URL
+FRONTEND_URL = os.getenv('FRONTEND_URL', 'http://localhost:8080')
+FRONTEND_AUTH_CALLBACK_URL = os.getenv('FRONTEND_AUTH_CALLBACK_URL', f'{FRONTEND_URL}/auth/callback')
+
+# Logging Configuration
+LOGGING = {
+    'version': 1,
+    'disable_existing_loggers': False,
+    'formatters': {
+        'verbose': {
+            'format': '{levelname} {asctime} {module} {message}',
+            'style': '{',
+        },
+    },
+    'handlers': {
+        'console': {
+            'class': 'logging.StreamHandler',
+            'formatter': 'verbose',
+        },
+    },
+    'loggers': {
+        'account.utils.oidc_utils': {
+            'handlers': ['console'],
+            'level': 'DEBUG',
+            'propagate': True,
+        },
+    },
+}

@@ -1,0 +1,61 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+
+# Virtual Environment
+.venv/
+venv/
+env/
+ENV/
+
+# Testing
+tests/
+.coverage
+htmlcov/
+.pytest_cache/
+*.log
+
+# Documentation
+CLAUDE/
+*.md
+
+# Git
+.git/
+.gitignore
+
+# CI/CD
+.github/
+k8s/
+docker-compose*.yml
+Dockerfile*
+nginx.conf
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Database (local development)
+db.sqlite3
+*.db
+
+# Environment
+.env
+.env.local
+
+# Static files (will be collected in container)
+staticfiles/
+media/
+
+# macOS
+.DS_Store
+
+# Matcher (separate project)
+matcher/
+
+# Misc
+*.csv

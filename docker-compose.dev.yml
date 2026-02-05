@@ -1,0 +1,75 @@
+version: '3.9'
+
+services:
+  # Django development server (with tests)
+  web:
+    build:
+      context: .
+      dockerfile: Dockerfile.dev
+    container_name: g-match-web-dev
+    command: python manage.py runserver 0.0.0.0:8000
+    volumes:
+      - .:/app  # Mount entire directory for hot-reload
+    ports:
+      - "8000:8000"
+    env_file:
+      - .env
+    environment:
+      - DEBUG=True
+      - ACC_DB_HOST=db
+      - REDIS_HOST=redis
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - g-match-network
+    stdin_open: true
+    tty: true
+
+  # MySQL database
+  db:
+    image: mysql:8.0
+    container_name: g-match-db-dev
+    environment:
+      MYSQL_DATABASE: ${ACC_DB_NAME:-g_match}
+      MYSQL_USER: ${ACC_DB_USER:-django-server}
+      MYSQL_PASSWORD: ${ACC_DB_PASSWORD}
+      MYSQL_ROOT_PASSWORD: ${ACC_DB_ROOT_PASSWORD}
+    volumes:
+      - mysql-dev-data:/var/lib/mysql
+    ports:
+      - "3306:3306"
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - g-match-network
+
+  # Redis cache
+  redis:
+    image: redis:7.2-alpine
+    container_name: g-match-redis-dev
+    command: redis-server --appendonly yes
+    volumes:
+      - redis-dev-data:/data
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - g-match-network
+
+volumes:
+  mysql-dev-data:
+  redis-dev-data:
+
+networks:
+  g-match-network:
+    driver: bridge
