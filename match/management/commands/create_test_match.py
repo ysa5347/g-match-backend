@@ -31,10 +31,11 @@ class Command(BaseCommand):
         partner_email = f'partner_{uuid.uuid4().hex[:8]}@gm.gist.ac.kr'
         partner_user = CustomUser.objects.create_user(
             email=partner_email,
-            name='테스트 파트너',
-            student_id='24',
-            gender='M' if user.gender == 'F' else 'F',
-            nickname='테스트룸메'
+            name='홍길동',
+            student_id='20245112',
+            gender='M',
+            nickname='테스트룸메',
+            phone_number='010-1234-5678'
         )
 
         self.stdout.write(f'Created partner user: {partner_email}')
@@ -53,7 +54,7 @@ class Command(BaseCommand):
         partner_property = Property.objects.create(
             user_id=partner_user.user_id,
             nickname=partner_user.nickname,
-            student_id=int(partner_user.student_id),
+            student_id=int(str(partner_user.student_id)[2:4]),
             gender=partner_user.gender,
             is_smoker=False,
             dorm_building='G',
