@@ -9,12 +9,12 @@ class UserInfoSerializer(serializers.ModelSerializer):
     class Meta:
         model = CustomUser
         fields = [
-            'uid', 'email', 'name', 'student_id', 'phone_number',
+            'user_id', 'email', 'name', 'student_id', 'phone_number',
             'gender', 'house', 'nickname',
             'is_oidc_user', 'date_joined'
         ]
         read_only_fields = [
-            'uid', 'email', 'name', 'student_id', 'phone_number',
+            'user_id', 'email', 'name', 'student_id', 'phone_number',
             'is_oidc_user', 'date_joined'
         ]
 
@@ -58,19 +58,19 @@ class BasicInfoSerializer(serializers.Serializer):
 
     GIST IdP에서 제공하지 않는 추가 정보를 입력받습니다.
     - gender: 필수
-    - house: 선택
+    - nickname: 선택
     """
     gender = serializers.ChoiceField(
         required=True,
         choices=[('M', 'Male'), ('F', 'Female')],
         help_text='성별 (M: 남성, F: 여성) - 필수'
     )
-    house = serializers.CharField(
+    nickname = serializers.CharField(
         required=False,
-        max_length=50,
+        max_length=20,
         allow_null=True,
         allow_blank=True,
-        help_text='기숙사 동 (예: A동) - 선택'
+        help_text='닉네임 (최대 20자) - 선택'
     )
 
 

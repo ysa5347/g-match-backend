@@ -21,7 +21,7 @@ class CustomUserModelTest(TestCase):
         self.assertEqual(user.email, 'test@gist.ac.kr')
         self.assertEqual(user.name, '테스트유저')
         self.assertTrue(user.check_password('testpass123!'))
-        self.assertIsInstance(user.uid, uuid.UUID)
+        self.assertIsInstance(user.user_id, uuid.UUID)
         self.assertTrue(user.is_active)
         self.assertFalse(user.is_staff)
         self.assertFalse(user.is_superuser)

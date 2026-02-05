@@ -118,6 +118,7 @@ def oidc_callback_view(request):
     처리 완료 후 F/E Auth Callback 페이지로 리다이렉트합니다.
     """
     from django.conf import settings as django_settings
+    from django.contrib.auth import login as auth_login
     from urllib.parse import urlencode
 
     frontend_callback_url = django_settings.FRONTEND_AUTH_CALLBACK_URL
@@ -171,9 +172,8 @@ def oidc_callback_view(request):
             user.phone_number = user_info.get('phone_number') or user.phone_number
             user.save()
 
-            # 세션 생성
-            request.session['user_id'] = str(user.uid)
-            request.session.cycle_key()
+            # Django auth 로그인 (SESSION_KEY에 user pk 저장)
+            auth_login(request, user)
 
             # F/E로 리다이렉트 (기존 사용자)
             params = {'is_new_user': 'false'}
@@ -362,7 +362,8 @@ def logout_view(request):
     로그아웃
     POST /api/v1alpha1/account/auth/logout
     """
-    request.session.flush()
+    from django.contrib.auth import logout as auth_logout
+    auth_logout(request)
 
     return Response({
         'success': True,
@@ -422,8 +423,7 @@ def user_info_view(request):
     사용자 정보 조회/수정
     GET/POST/PUT /api/v1alpha1/account/info
     """
-    user_id = request.session.get('user_id')
-    user = CustomUser.objects.get(uid=user_id)
+    user = request.user
 
     if request.method == 'GET':
         serializer = UserInfoSerializer(user)
@@ -536,7 +536,7 @@ def registration_main(request):
             'oidc_authenticated': 'OIDC 인증 완료',
             'agreed': '약관 동의 완료'
         },
-        'note': '사용자 정보(이메일, 이름, 학번, 전화번호)는 GIST IdP에서 제공받습니다. 성별은 필수, 기숙사 동은 선택적으로 입력합니다.'
+        'note': '사용자 정보(이메일, 이름, 학번, 전화번호)는 GIST IdP에서 제공받습니다. 성별은 필수, 닉네임은 선택적으로 입력합니다.'
     }, status=status.HTTP_200_OK)
 
 
@@ -609,7 +609,7 @@ def verify_code_view(request):
 
     약관 동의(/registration/agree) 완료 후 호출해야 합니다.
     - gender: 필수 (M 또는 F)
-    - house: 선택
+    - nickname: 선택 (최대 20자)
     ''',
     request_body=BasicInfoSerializer,
     manual_parameters=[
@@ -674,11 +674,11 @@ def registration_basic_info_view(request):
                     'choices': ['M', 'F'],
                     'description': '성별 (M: 남성, F: 여성) - 필수'
                 },
-                'house': {
+                'nickname': {
                     'type': 'string',
                     'required': False,
-                    'max_length': 50,
-                    'description': '기숙사 동 (예: A동) - 선택'
+                    'max_length': 20,
+                    'description': '닉네임 (최대 20자) - 선택'
                 }
             },
             'note': 'email, name, student_id, phone_number는 GIST IdP에서 제공됩니다. gender는 필수 입력 항목입니다.'
@@ -716,17 +716,17 @@ def registration_basic_info_view(request):
 
         # 세션 삭제 (회원가입 완료)
         from django.core.cache import cache
+        from django.contrib.auth import login as auth_login
         cache.delete(f"registration:{reg_sid}")
 
-        # 로그인 세션 생성
-        request.session['user_id'] = str(user.uid)
-        request.session.cycle_key()
+        # Django auth 로그인 (SESSION_KEY에 user pk 저장)
+        auth_login(request, user)
 
         response = Response({
             'success': True,
             'message': '회원가입이 완료되었습니다.',
             'user': {
-                'uid': str(user.uid),
+                'user_id': str(user.user_id),
                 'email': user.email,
                 'name': user.name,
                 'student_id': user.student_id

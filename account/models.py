@@ -46,7 +46,7 @@ class CustomUserManager(BaseUserManager):
                 - phone_number: 전화번호
             extra_data: dict containing additional user info:
                 - gender: 성별 (M/F) - 필수
-                - house: 기숙사 동 - 선택
+                - nickname: 닉네임 - 선택
 
         Returns:
             tuple: (user, created)
@@ -89,9 +89,9 @@ class CustomUserManager(BaseUserManager):
             'phone_number': oidc_user_info.get('phone_number'),
         }
 
-        # 추가 정보 병합 (gender, house)
+        # 추가 정보 병합 (gender, nickname)
         if extra_data:
-            for key in ['gender', 'house']:
+            for key in ['gender', 'nickname']:
                 if key in extra_data and extra_data[key] is not None:
                     user_data[key] = extra_data[key]
 
@@ -100,7 +100,7 @@ class CustomUserManager(BaseUserManager):
 
 
 class CustomUser(AbstractBaseUser, PermissionsMixin):
-    uid = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    user_id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     email = models.EmailField(
         unique=True,
         validators=[EmailValidator()],
