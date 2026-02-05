@@ -24,12 +24,12 @@ class Property(models.Model):
 
     # Account DB에서 받아올 내용
     nickname = models.CharField(max_length=20)
-    student_id = models.IntegerField()
+    student_id = models.SmallIntegerField()
     gender = models.CharField(max_length=1)  # 'M' or 'F'
 
     is_smoker = models.BooleanField()
 
-    dorm_building = models.CharField(max_length=1)  # 'G', 'I' ...
+    dorm_building = models.CharField(max_length=1)  # 'G', 'I' ... 'N'
     stay_period = models.SmallIntegerField()  # 최소 입주 기간을 나타내는 열 ...
 
     has_fridge = models.BooleanField()

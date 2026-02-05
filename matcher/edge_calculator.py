@@ -85,7 +85,7 @@ def calculate_basic_score(user_a: dict, user_b: dict) -> float:
     basic_b = user_b['basic']
     score = SOFT_SCORE_MAX
 
-    if basic_a['dorm_building'] != basic_b['dorm_building']:
+    if basic_a['dorm_building'] != 'A' and basic_a['dorm_building'] != basic_b['dorm_building']:
         score -= SOFT_SCORE_DEDUCT
 
     if basic_a['stay_period'] != basic_b['stay_period']:
@@ -103,16 +103,16 @@ def calculate_basic_score(user_a: dict, user_b: dict) -> float:
 def _check_preference_mismatch(basic_a: dict, basic_b: dict, pref_key: str, has_key: str) -> bool:
     # A → B 방향
     mate_pref_a = basic_a.get(pref_key, 0)
-    if mate_pref_a == 1 and not basic_b.get(has_key, False):
+    if mate_pref_a == 0 and not basic_b.get(has_key, False):
         return True
-    if mate_pref_a == 2 and basic_b.get(has_key, False):
+    if mate_pref_a == 1 and basic_b.get(has_key, False):
         return True
 
     # B → A 방향
     mate_pref_b = basic_b.get(pref_key, 0)
-    if mate_pref_b == 1 and not basic_a.get(has_key, False):
+    if mate_pref_b == 0 and not basic_a.get(has_key, False):
         return True
-    if mate_pref_b == 2 and basic_a.get(has_key, False):
+    if mate_pref_b == 1 and basic_a.get(has_key, False):
         return True
 
     return False
