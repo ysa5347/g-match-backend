@@ -74,7 +74,7 @@ class ProfileViewSet(viewsets.ViewSet):
                 serializer.save(
                     user_id=user.user_id,
                     nickname=user.nickname,
-                    student_id=int(str(user.student_id)[:2]),
+                    student_id=(user.student_id/10000)%100,
                     gender=user.gender
                 )
                 return Response({

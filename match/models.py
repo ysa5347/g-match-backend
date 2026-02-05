@@ -97,7 +97,7 @@ class MatchHistory(models.Model):
     surv_a_id = models.BigIntegerField()
     surv_b_id = models.BigIntegerField()
 
-    compatibility_score = models.JSONField()  # 0~100 및 항목별 유사도점수
+    compatibility_score = models.FloatField() # 항목별 유사도 점수 있으면 좋긴할 듯
 
     a_approval = models.SmallIntegerField(
         choices=ApprovalChoice.choices,

@@ -19,9 +19,9 @@ class RedisQueueService:
     def __init__(self, redis_client: redis.Redis):
         self.redis = redis_client
 
-    def register_user(self, user_id: int, property_obj: Property, survey_obj: Survey):
+    def register_user(self, user_id, property_obj: Property, survey_obj: Survey):
         queue_data = {
-            "user_id": user_id,
+            "user_id": str(user_id),  # UUID를 문자열로 변환
             "property_id": property_obj.property_id,
             "survey_id": survey_obj.survey_id,
             "basic": {
@@ -274,7 +274,7 @@ class MatchingService:
         if not match_history:
             return {"success": False, "error": "match_history_not_found"}
 
-        partner_prop_id, partner_surv_id = self.history_service.get_partner_ids(
+        partner_prop_id, partner_surv_id = self.history_service.get_partner_profile_ids(
             match_history, user_id
         )
         partner_property = Property.objects.filter(property_id=partner_prop_id).first()
