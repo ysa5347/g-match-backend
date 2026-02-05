@@ -19,9 +19,9 @@ class RedisQueueService:
     def __init__(self, redis_client: redis.Redis):
         self.redis = redis_client
 
-    def register_user(self, user_id: int, property_obj: Property, survey_obj: Survey):
+    def register_user(self, user_id, property_obj: Property, survey_obj: Survey):
         queue_data = {
-            "user_id": user_id,
+            "user_id": str(user_id),  # UUID를 문자열로 변환
             "property_id": property_obj.property_id,
             "survey_id": survey_obj.survey_id,
             "basic": {
@@ -274,7 +274,7 @@ class MatchingService:
         if not match_history:
             return {"success": False, "error": "match_history_not_found"}
 
-        partner_prop_id, partner_surv_id = self.history_service.get_partner_ids(
+        partner_prop_id, partner_surv_id = self.history_service.get_partner_profile_ids(
             match_history, user_id
         )
         partner_property = Property.objects.filter(property_id=partner_prop_id).first()
@@ -386,10 +386,27 @@ class MatchingService:
 
         partner_id = self.history_service.get_partner_id(match_history, user_id)
 
+        # 상대방의 CustomUser 정보 가져오기
+        partner_user = CustomUser.objects.filter(user_id=partner_id).first()
+        if not partner_user:
+            return {"success": False, "error": "partner_data_fetch_failed"}
+
+        # 상대방의 Property 정보 가져오기
+        partner_property = Property.objects.filter(user_id=partner_id).last()
+        if not partner_property:
+            return {"success": False, "error": "partner_data_fetch_failed"}
+
+        # 학번의 3, 4번째 자리만 추출 (예: 2024 -> 24)
+        student_id_str = str(partner_user.student_id)
+        student_id_display = int(student_id_str[2:4]) if len(student_id_str) >= 4 else partner_user.student_id
+
         return {
             "success": True,
             "match_status": current_status,
-            "partner_id": partner_id
+            "partner_name": partner_user.name,
+            "partner_phone": partner_user.phone_number,
+            "partner_gender": partner_property.gender,
+            "partner_student_id": student_id_display,
         }
 
     # ==================== 재매칭 ====================

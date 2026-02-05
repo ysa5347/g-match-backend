@@ -74,7 +74,7 @@ class ProfileViewSet(viewsets.ViewSet):
                 serializer.save(
                     user_id=user.user_id,
                     nickname=user.nickname,
-                    student_id=int(str(user.student_id)[:2]),
+                    student_id = int(str(user.student_id)[2:4]),
                     gender=user.gender
                 )
                 return Response({
@@ -141,7 +141,7 @@ class MatchingViewSet(viewsets.ViewSet):
     def _get_status_code(self, error: str) -> int:
         error_to_status = {
             "profile_not_found": status.HTTP_404_NOT_FOUND,
-            "prerequisite:profile": status.HTTP_BAD_REQUEST,
+            "prerequisite:profile": status.HTTP_400_BAD_REQUEST,
             "match_history_not_found": status.HTTP_404_NOT_FOUND,
             "partner_data_fetch_failed": status.HTTP_404_NOT_FOUND,
             "invalid_status": status.HTTP_400_BAD_REQUEST,
@@ -216,19 +216,14 @@ class MatchingViewSet(viewsets.ViewSet):
         if not result["success"]:
             return Response(result, status=self._get_status_code(result.get("error")))
 
-        partner_user = CustomUser.objects.filter(user_id=result["partner_id"]).first()
-        if not partner_user:
-            return Response({
-                "success": False,
-                "error": "partner_data_fetch_failed"
-            }, status=status.HTTP_404_NOT_FOUND)
-
         return Response({
             "success": True,
             "match_status": result["match_status"],
             "partner": {
-                "user_id": result["partner_id"],
-                "nickname": result["partner_nickname"],
+                "name": result["partner_name"],
+                "phone": result["partner_phone"],
+                "gender": result["partner_gender"],
+                "student_id": result["partner_student_id"],
             }
         }, status=status.HTTP_200_OK)
 
