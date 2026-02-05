@@ -205,6 +205,8 @@ CACHES = {
 }
 
 # REST Framework Settings
+# DRF의 SessionAuthentication은 Django 미들웨어와 별개로 자체 CSRF 검증을 수행함.
+# CSRF_ENABLED=False인 환경에서는 CSRF를 강제하지 않는 커스텀 인증 클래스를 사용.
 REST_FRAMEWORK = {
     'DEFAULT_RENDERER_CLASSES': [
         'rest_framework.renderers.JSONRenderer',
@@ -212,6 +214,11 @@ REST_FRAMEWORK = {
     ],
     'DEFAULT_PARSER_CLASSES': [
         'rest_framework.parsers.JSONParser',
+    ],
+    'DEFAULT_AUTHENTICATION_CLASSES': [
+        'rest_framework.authentication.SessionAuthentication',
+    ] if CSRF_ENABLED else [
+        'g_match.authentication.CsrfExemptSessionAuthentication',
     ],
 }
 

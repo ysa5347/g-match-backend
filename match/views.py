@@ -155,7 +155,6 @@ class MatchingViewSet(viewsets.ViewSet):
         return Response(result, status=status_code)
 
     @action(detail=False, methods=['post'], url_path='start')
-    
     def start(self, request):
         """POST /matching/start/ - 대기열 등록"""
         result = self.service.start_matching(request.user.user_id)
