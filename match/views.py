@@ -141,6 +141,7 @@ class MatchingViewSet(viewsets.ViewSet):
     def _get_status_code(self, error: str) -> int:
         error_to_status = {
             "profile_not_found": status.HTTP_404_NOT_FOUND,
+            "prerequisite:profile": status.HTTP_BAD_REQUEST,
             "match_history_not_found": status.HTTP_404_NOT_FOUND,
             "partner_data_fetch_failed": status.HTTP_404_NOT_FOUND,
             "invalid_status": status.HTTP_400_BAD_REQUEST,

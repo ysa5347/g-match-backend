@@ -136,7 +136,7 @@ class MatchingService:
         survey_obj = Survey.objects.filter(user_id=user_id).last()
 
         if not property_obj or not survey_obj:
-            return {"success": False, "error": "profile_not_found"}
+            return {"success": False, "error": "prerequisite:profile"}
 
         if property_obj.match_status != Property.MatchStatusChoice.NOT_STARTED:
             return {
@@ -160,7 +160,7 @@ class MatchingService:
         property_obj = Property.objects.filter(user_id=user_id).last()
 
         if not property_obj:
-            return {"success": False, "error": "profile_not_found"}
+            return {"success": False, "error": "prerequisite:profile"}
 
         current_status = property_obj.match_status
 
@@ -218,7 +218,7 @@ class MatchingService:
             partner_prop = prop_b if user_id == user_a_id else prop_a
 
             if not my_prop or not partner_prop:
-                return {"success": False, "error": "profile_not_found"}
+                return {"success": False, "error": "prerequisite:profile"}
 
             # 상태 검증
             if my_prop.match_status != expected_status:
@@ -254,7 +254,7 @@ class MatchingService:
         property_obj = Property.objects.filter(user_id=user_id).last()
 
         if not property_obj:
-            return {"success": False, "error": "profile_not_found"}
+            return {"success": False, "error": "prerequisite:profile"}
 
         current_status = property_obj.match_status
         allowed_statuses = [
@@ -321,7 +321,7 @@ class MatchingService:
             partner_prop = prop_b if user_id == user_a_id else prop_a
 
             if not my_prop or not partner_prop:
-                return {"success": False, "error": "profile_not_found"}
+                return {"success": False, "error": "prerequisite:profile"}
 
             if my_prop.match_status != Property.MatchStatusChoice.MATCHED:
                 return {
@@ -365,7 +365,7 @@ class MatchingService:
         property_obj = Property.objects.filter(user_id=user_id).last()
 
         if not property_obj:
-            return {"success": False, "error": "profile_not_found"}
+            return {"success": False, "error": "prerequisite:profile"}
 
         current_status = property_obj.match_status
         allowed_statuses = [
@@ -398,7 +398,7 @@ class MatchingService:
         property_obj = Property.objects.filter(user_id=user_id).last()
 
         if not property_obj:
-            return {"success": False, "error": "profile_not_found"}
+            return {"success": False, "error": "prerequisite:profile"}
 
         current_status = property_obj.match_status
 
@@ -443,7 +443,7 @@ class MatchingService:
             partner_prop = prop_b if user_id == user_a_id else prop_a
 
             if not my_prop:
-                return {"success": False, "error": "profile_not_found"}
+                return {"success": False, "error": "prerequisite:profile"}
 
             # 상태 검증
             if my_prop.match_status != Property.MatchStatusChoice.BOTH_APPROVED:
