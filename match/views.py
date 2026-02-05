@@ -23,7 +23,7 @@ class ProfileViewSet(viewsets.ViewSet):
     PROFILE_STATUS_NO_SURVEY = 1
     PROFILE_STATUS_COMPLETE = 2
 
-    
+
     def list(self, request):
         user = request.user
         property_obj = Property.objects.filter(user_id=user.user_id).last()
@@ -50,13 +50,13 @@ class ProfileViewSet(viewsets.ViewSet):
         }, status=status.HTTP_200_OK)
 
     @action(detail=False, methods=['get', 'post'], url_path='property')
-    
+
     def property_info(self, request):
         user = request.user
-        
+
         if request.method == 'GET':
             # checkpoint
-            print(user)
+            # print(user)
             property_obj = Property.objects.filter(user_id=user.user_id).last()
             if property_obj:
                 return Response({
@@ -74,7 +74,7 @@ class ProfileViewSet(viewsets.ViewSet):
                 serializer.save(
                     user_id=user.user_id,
                     nickname=user.nickname,
-                    student_id=user.student_id,
+                    student_id=int(str(user.student_id)[:2]),
                     gender=user.gender
                 )
                 return Response({
@@ -89,7 +89,7 @@ class ProfileViewSet(viewsets.ViewSet):
             }, status=status.HTTP_400_BAD_REQUEST)
 
     @action(detail=False, methods=['get', 'post'], url_path='survey')
-    
+
     def survey_info(self, request):
         user = request.user
 
@@ -147,7 +147,7 @@ class MatchingViewSet(viewsets.ViewSet):
         }
         return error_to_status.get(error, status.HTTP_500_INTERNAL_SERVER_ERROR)
 
-    
+
     def list(self, request):
         """GET /matching/ - 현재 매칭 상태 조회"""
         result = self.service.get_status(request.user.user_id)
@@ -155,6 +155,7 @@ class MatchingViewSet(viewsets.ViewSet):
         return Response(result, status=status_code)
 
     @action(detail=False, methods=['post'], url_path='start')
+
     def start(self, request):
         """POST /matching/start/ - 대기열 등록"""
         result = self.service.start_matching(request.user.user_id)
@@ -162,7 +163,7 @@ class MatchingViewSet(viewsets.ViewSet):
         return Response(result, status=status_code)
 
     @action(detail=False, methods=['post'], url_path='cancel')
-    
+
     def cancel(self, request):
         """POST /matching/cancel/ - 매칭 취소"""
         result = self.service.cancel_matching(request.user.user_id)
@@ -170,7 +171,7 @@ class MatchingViewSet(viewsets.ViewSet):
         return Response(result, status=status_code)
 
     @action(detail=False, methods=['get'], url_path='result')
-    
+
     def result(self, request):
         """GET /matching/result/ - 매칭 결과 상세 조회"""
         result = self.service.get_result(request.user.user_id)
@@ -190,7 +191,7 @@ class MatchingViewSet(viewsets.ViewSet):
         }, status=status.HTTP_200_OK)
 
     @action(detail=False, methods=['post'], url_path='agree')
-    
+
     def agree(self, request):
         """POST /matching/agree/ - 매칭 수락"""
         result = self.service.agree(request.user.user_id)
@@ -198,7 +199,7 @@ class MatchingViewSet(viewsets.ViewSet):
         return Response(result, status=status_code)
 
     @action(detail=False, methods=['post'], url_path='reject')
-    
+
     def reject(self, request):
         """POST /matching/reject/ - 매칭 거절"""
         result = self.service.reject(request.user.user_id)
@@ -206,7 +207,7 @@ class MatchingViewSet(viewsets.ViewSet):
         return Response(result, status=status_code)
 
     @action(detail=False, methods=['get'], url_path='contact')
-    
+
     def contact(self, request):
         """GET /matching/contact/ - 상대방 연락처 조회"""
         result = self.service.get_contact(request.user.user_id)
@@ -231,7 +232,7 @@ class MatchingViewSet(viewsets.ViewSet):
         }, status=status.HTTP_200_OK)
 
     @action(detail=False, methods=['post'], url_path='rematch')
-    
+
     def rematch(self, request):
         """POST /matching/rematch/ - 재매칭 요청"""
         result = self.service.rematch(request.user.user_id)
