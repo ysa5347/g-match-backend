@@ -48,7 +48,7 @@ INSTALLED_APPS = [
     'match',
 ]
 
-CSRF_ENABLED = os.getenv('CSRF_ENABLED', 'True').lower() in ('true', '1', 'yes')
+CSRF_ENABLED = os.getenv('CSRF_ENABLED', 'False').lower() in ('true', '1', 'yes')
 
 MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',
@@ -175,7 +175,6 @@ USE_X_FORWARDED_PORT = True
 # Dev 환경: CSRF_ENABLED=False (.env) → 미들웨어 제외, 쿠키/trusted origins 불필요
 # Prod 환경: CSRF_ENABLED=True (기본값) → 미들웨어 활성, axios가 csrftoken 쿠키 → X-CSRFToken 헤더
 if CSRF_ENABLED:
-    CSRF_COOKIE_DOMAIN= = '.g-match.org'
     CSRF_TRUSTED_ORIGINS = [
         'https://api.g-match.org',
         'https://www.g-match.org',
