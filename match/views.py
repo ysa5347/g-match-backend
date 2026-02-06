@@ -45,6 +45,7 @@ class ProfileViewSet(viewsets.ViewSet):
             "success": True,
             "profile_status": self.PROFILE_STATUS_COMPLETE,
             "user_id": user.user_id,
+            "match_status": property_obj.match_status,
             "property": ProfilePropertySerializer(property_obj).data,
             "survey": ProfileSurveySerializer(survey_obj).data,
         }, status=status.HTTP_200_OK)
@@ -70,6 +71,15 @@ class ProfileViewSet(viewsets.ViewSet):
             }, status=status.HTTP_404_NOT_FOUND)
 
         if request.method == 'POST':
+            # 매칭 진행 중이면 프로필 수정 불가
+            existing_property = Property.objects.filter(user_id=user.user_id).last()
+            if existing_property and existing_property.match_status != Property.MatchStatusChoice.NOT_STARTED:
+                return Response({
+                    "success": False,
+                    "error": "matching_in_progress",
+                    "message": "매칭 진행 중에는 프로필을 수정할 수 없습니다."
+                }, status=status.HTTP_400_BAD_REQUEST)
+
             serializer = PropertySerializer(data=request.data)
             if serializer.is_valid():
                 serializer.save(
@@ -109,6 +119,15 @@ class ProfileViewSet(viewsets.ViewSet):
             }, status=status.HTTP_404_NOT_FOUND)
 
         if request.method == 'POST':
+            # 매칭 진행 중이면 프로필 수정 불가
+            existing_property = Property.objects.filter(user_id=user.user_id).last()
+            if existing_property and existing_property.match_status != Property.MatchStatusChoice.NOT_STARTED:
+                return Response({
+                    "success": False,
+                    "error": "matching_in_progress",
+                    "message": "매칭 진행 중에는 프로필을 수정할 수 없습니다."
+                }, status=status.HTTP_400_BAD_REQUEST)
+
             serializer = SurveySerializer(data=request.data)
             if serializer.is_valid():
                 service = InsightService(
