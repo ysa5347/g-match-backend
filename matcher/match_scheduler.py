@@ -5,17 +5,19 @@ Match Scheduler (단일 Pod)
 1. 락 획득
 2. edge 조회 + 유저 데이터 조회
 3. 고아 edge 정리 (user-queue에 없는 유저의 edge 삭제)
-4. 유효 edge 필터링 (threshold 이상 OR priority 10 이상 유저 포함)
+4. 유효 edge 필터링 (threshold 이상만)
 5. priority 합 DESC, score DESC 정렬 → greedy 매칭
 6. MatchHistory 저장 + user-queue 삭제
-7. 남은 유저 priority 증가 (에이징)
-8. 락 해제
+7. 만료 유저 제거 (24시간 초과 → match_status=9)
+8. 남은 유저 priority 증가 (에이징)
+9. 락 해제
 """
 
 import json
 import time
 import uuid
 import logging
+from datetime import datetime, timezone, timedelta
 import pymysql
 import redis
 
@@ -78,7 +80,7 @@ def release_lock(r: redis.Redis, lock_value: str) -> bool:
 # == 2. Edge 및 유저 데이터 조회 ==============================
 MGET_BATCH_SIZE = 500
 
-def get_all_edges_and_users(r: redis.Redis) -> tuple[list[dict], dict[int, dict]]:
+def get_all_edges_and_users(r: redis.Redis) -> tuple[list[dict], dict[str, dict]]:
     """모든 edge와 user-queue 데이터 조회 (MGET 배치 처리)"""
     # Edge 조회 - MGET으로 배치 처리
     edges = []
@@ -106,13 +108,13 @@ def get_all_edges_and_users(r: redis.Redis) -> tuple[list[dict], dict[int, dict]
                 if data:
                     user_data = json.loads(data)
                     user_data['_redis_key'] = key
-                    users[user_data['user_pk']] = user_data
+                    users[user_data['user_id']] = user_data
 
     return edges, users
 
 
 # == 3. 고아 edge 정리 =======================================
-def cleanup_orphan_edges(r: redis.Redis, edges: list[dict], valid_user_pks: set[int]) -> list[dict]:
+def cleanup_orphan_edges(r: redis.Redis, edges: list[dict], valid_user_ids: set[str]) -> list[dict]:
     """
     user-queue에 없는 유저가 포함된 edge 삭제
     Returns: 유효한 edge만 필터링된 리스트
@@ -121,9 +123,9 @@ def cleanup_orphan_edges(r: redis.Redis, edges: list[dict], valid_user_pks: set[
     removed_count = 0
 
     for edge in edges:
-        pk_a, pk_b = edge['user_a_pk'], edge['user_b_pk']
+        id_a, id_b = edge['user_a_id'], edge['user_b_id']
 
-        if pk_a in valid_user_pks and pk_b in valid_user_pks:
+        if id_a in valid_user_ids and id_b in valid_user_ids:
             valid_edges.append(edge)
         else:
             r.delete(edge['_key'])
@@ -136,26 +138,21 @@ def cleanup_orphan_edges(r: redis.Redis, edges: list[dict], valid_user_pks: set[
 
 
 # == 4. Greedy 매칭 알고리즘 =================================
-PRIORITY_THRESHOLD = 10
-
-def find_matching_pairs(edges: list[dict], users: dict[int, dict], threshold: float) -> list[dict]:
+def find_matching_pairs(edges: list[dict], users: dict[str, dict], threshold: float) -> list[dict]:
     """
-    1. 유효 edge 필터링:
-       - score >= threshold OR
-       - 두 유저 중 하나라도 priority >= PRIORITY_THRESHOLD
-    2. priority 합 DESC, score DESC 정렬
+    1. 유효 edge 필터링: score >= threshold
+    2. priority 합 DESC, score DESC 정렬 (높은 priority 유저 우선 매칭)
     3. greedy로 unique 쌍 추출
     """
     valid_edges = []
 
     for e in edges:
-        user_a = users.get(e['user_a_pk'], {})
-        user_b = users.get(e['user_b_pk'], {})
+        user_a = users.get(e['user_a_id'], {})
+        user_b = users.get(e['user_b_id'], {})
         priority_a = user_a.get('priority', 0)
         priority_b = user_b.get('priority', 0)
 
-        # threshold 이상이거나, 한쪽이라도 priority 10 이상이면 유효
-        if e['score'] >= threshold or priority_a >= PRIORITY_THRESHOLD or priority_b >= PRIORITY_THRESHOLD:
+        if e['score'] >= threshold:
             e['_priority_sum'] = priority_a + priority_b
             valid_edges.append(e)
 
@@ -168,7 +165,7 @@ def find_matching_pairs(edges: list[dict], users: dict[int, dict], threshold: fl
     matched_pairs = []
 
     for edge in valid_edges:
-        a, b = edge['user_a_pk'], edge['user_b_pk']
+        a, b = edge['user_a_id'], edge['user_b_id']
         if a not in matched_users and b not in matched_users:
             matched_pairs.append(edge)
             matched_users.add(a)
@@ -178,41 +175,46 @@ def find_matching_pairs(edges: list[dict], users: dict[int, dict], threshold: fl
 
 
 # == 5. MatchHistory 저장 + user-queue 삭제 ==================
-def process_matched_pairs(r: redis.Redis, conn, matched_pairs: list[dict], users: dict[int, dict]) -> set[int]:
+def process_matched_pairs(r: redis.Redis, conn, matched_pairs: list[dict], users: dict[str, dict]) -> set[str]:
     """매칭된 쌍 처리: DB 저장 + user-queue 삭제 (edge 정리는 다음 사이클에서)"""
     removed_users = set()
     cursor = conn.cursor()
 
     for edge in matched_pairs:
-        user_a_pk, user_b_pk = edge['user_a_pk'], edge['user_b_pk']
-        user_a, user_b = users.get(user_a_pk), users.get(user_b_pk)
+        user_a_id, user_b_id = edge['user_a_id'], edge['user_b_id']
+        user_a, user_b = users.get(user_a_id), users.get(user_b_id)
 
         if not user_a or not user_b:
-            logger.warning(f"Missing user data: {user_a_pk} <-> {user_b_pk}")
+            logger.warning(f"Missing user data: {user_a_id} <-> {user_b_id}")
             continue
 
         try:
             cursor.execute("""
                 INSERT INTO match_history (
-                    matched_at, user_a_pk, user_b_pk,
+                    matched_at, user_a_id, user_b_id,
                     prop_a_id, prop_b_id, surv_a_id, surv_b_id,
                     compatibility_score, a_approval, b_approval, final_match_status
                 ) VALUES (NOW(), %s, %s, %s, %s, %s, %s, %s, 0, 0, 0)
             """, (
-                user_a['user_pk'], user_b['user_pk'],
+                user_a['user_id'], user_b['user_id'],
                 user_a['property_id'], user_b['property_id'],
                 user_a['survey_id'], user_b['survey_id'],
                 edge['score']
             ))
-            logger.info(f"MatchHistory saved: {user_a_pk} <-> {user_b_pk} (score: {edge['score']})")
+            # match_properties의 match_status를 2(MATCHED)로 변경
+            cursor.execute(
+                "UPDATE match_properties SET match_status = 2 WHERE property_id IN (%s, %s)",
+                (user_a['property_id'], user_b['property_id'])
+            )
+            logger.info(f"MatchHistory saved: {user_a_id} <-> {user_b_id} (score: {edge['score']})")
         except Exception as e:
             logger.error(f"Failed to save match history: {e}")
             continue
 
-        r.delete(f"{USER_QUEUE_PREFIX}{user_a_pk}")
-        r.delete(f"{USER_QUEUE_PREFIX}{user_b_pk}")
-        removed_users.add(user_a_pk)
-        removed_users.add(user_b_pk)
+        r.delete(f"{USER_QUEUE_PREFIX}{user_a_id}")
+        r.delete(f"{USER_QUEUE_PREFIX}{user_b_id}")
+        removed_users.add(user_a_id)
+        removed_users.add(user_b_id)
 
     conn.commit()
     cursor.close()
@@ -220,7 +222,55 @@ def process_matched_pairs(r: redis.Redis, conn, matched_pairs: list[dict], users
     return removed_users
 
 
-# == 6. 남은 유저 aging ======================================
+# == 6. 만료 유저 제거 (24시간 초과) ==========================
+EXPIRE_HOURS = 24
+
+def remove_expired_users(r: redis.Redis, conn):
+    """registered_at으로부터 24시간 초과된 유저를 user-queue에서 제거하고 match_status=9로 변경"""
+    now = datetime.now(timezone.utc)
+    expired_property_ids = []
+    removed_count = 0
+
+    for key in r.keys(USER_QUEUE_PATTERN):
+        data = r.get(key)
+        if not data:
+            continue
+
+        user_data = json.loads(data)
+        registered_at_str = user_data.get('registered_at')
+        if not registered_at_str:
+            continue
+
+        registered_at = datetime.fromisoformat(registered_at_str)
+        if now - registered_at > timedelta(hours=EXPIRE_HOURS):
+            property_id = user_data.get('property_id')
+            if property_id:
+                expired_property_ids.append(property_id)
+            r.delete(key)
+            removed_count += 1
+            logger.info(f"Expired user removed: {user_data.get('user_id')} (registered_at: {registered_at_str})")
+
+    if expired_property_ids:
+        cursor = conn.cursor()
+        try:
+            placeholders = ','.join(['%s'] * len(expired_property_ids))
+            cursor.execute(
+                f"UPDATE match_properties SET match_status = 9 WHERE property_id IN ({placeholders})",
+                expired_property_ids
+            )
+            conn.commit()
+            logger.info(f"Updated match_status=9 for {cursor.rowcount} expired properties")
+        except Exception as e:
+            logger.error(f"Failed to update match_status for expired users: {e}")
+            conn.rollback()
+        finally:
+            cursor.close()
+
+    if removed_count > 0:
+        logger.info(f"Removed {removed_count} expired user(s) from queue")
+
+
+# == 7. 남은 유저 aging ======================================
 def increment_priorities(r: redis.Redis):
     updated = 0
     for key in r.keys(USER_QUEUE_PATTERN):
@@ -241,19 +291,21 @@ def run_matching_cycle(r: redis.Redis, conn):
         logger.debug("No users in queue")
         return
 
-    valid_user_pks = set(users.keys())
+    valid_user_ids = set(users.keys())
 
     if edges:
-        edges = cleanup_orphan_edges(r, edges, valid_user_pks)
+        edges = cleanup_orphan_edges(r, edges, valid_user_ids)
 
     if not edges:
         logger.debug("No valid edges found")
+        remove_expired_users(r, conn)
         increment_priorities(r)
         return
 
     matched_pairs = find_matching_pairs(edges, users, MATCH_THRESHOLD)
     if not matched_pairs:
         logger.debug("No matching pairs found")
+        remove_expired_users(r, conn)
         increment_priorities(r)
         return
 
@@ -261,6 +313,7 @@ def run_matching_cycle(r: redis.Redis, conn):
 
     process_matched_pairs(r, conn, matched_pairs, users)
 
+    remove_expired_users(r, conn)
     increment_priorities(r)
 
 

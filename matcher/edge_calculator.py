@@ -169,14 +169,14 @@ def calculate_final_score(user_a: dict, user_b: dict) -> float:
 
 
 def save_edge(r: redis.Redis, user_a: dict, user_b: dict, score: float):
-    """Edge 저장 (key는 pk 오름차순)"""
-    pk_a, pk_b = user_a['user_pk'], user_b['user_pk']
-    min_pk, max_pk = min(pk_a, pk_b), max(pk_a, pk_b)
+    """Edge 저장 (key는 user_id 문자열 오름차순)"""
+    id_a, id_b = user_a['user_id'], user_b['user_id']
+    min_id, max_id = min(id_a, id_b), max(id_a, id_b)
 
-    edge_key = f"{EDGE_PREFIX}{min_pk}:{max_pk}"
+    edge_key = f"{EDGE_PREFIX}{min_id}:{max_id}"
     edge_data = {
-        'user_a_pk': min_pk,
-        'user_b_pk': max_pk,
+        'user_a_id': min_id,
+        'user_b_id': max_id,
         'score': score,
         'created_at': int(time.time())
     }
@@ -201,11 +201,11 @@ def mark_as_calculated(r: redis.Redis, user_data: dict):
 # == 메인 처리 로직 ===========================================
 def process_new_user(r: redis.Redis, new_user: dict, calculated_users: list[dict]):
     """신규 유저와 기존 유저들 간의 edge 계산"""
-    user_pk = new_user['user_pk']
+    user_id = new_user['user_id']
     edge_count = 0
 
     for existing in calculated_users:
-        if existing['user_pk'] == user_pk:
+        if existing['user_id'] == user_id:
             continue
 
         if not check_hard_filter(new_user, existing):
@@ -216,7 +216,7 @@ def process_new_user(r: redis.Redis, new_user: dict, calculated_users: list[dict
         edge_count += 1
 
     mark_as_calculated(r, new_user)
-    logger.info(f"User {user_pk}: created {edge_count} edges")
+    logger.info(f"User {user_id}: created {edge_count} edges")
 
 
 def run_polling():
