@@ -1,5 +1,6 @@
 # 연락처 조회 파트 ACCOUNT와 연동 필요
 
+from django.conf import settings as django_settings
 from rest_framework import viewsets, permissions, status
 from rest_framework.decorators import action
 from rest_framework.response import Response
@@ -13,7 +14,13 @@ from .profile_service import InsightService
 from .match_service import MatchingService
 
 
-redis_client = redis.Redis(host='localhost', port=6379, db=0, decode_responses=True)
+redis_client = redis.Redis(
+    host=django_settings.REDIS_HOST,
+    port=int(django_settings.REDIS_PORT),
+    password=django_settings.REDIS_PASSWORD or None,
+    db=0,
+    decode_responses=True,
+)
 
 
 class ProfileViewSet(viewsets.ViewSet):
