@@ -14,7 +14,7 @@ class Command(BaseCommand):
             '--status',
             type=int,
             default=2,
-            help='Match status (2=MATCHED, 3=MY_APPROVED, 4=BOTH_APPROVED, 5=PARTNER_REJECTED, 6=PARTNER_REMATCHED)'
+            help='Match status (2=MATCHED, 3=MY_APPROVED, 4=BOTH_APPROVED, 5=PARTNER_REJECTED, 6=PARTNER_REMATCHED, 9=EXPIRED)'
         )
 
     def handle(self, *args, **options):
@@ -47,6 +47,17 @@ class Command(BaseCommand):
         if not user_property or not user_survey:
             self.stdout.write(
                 self.style.ERROR('User must have Property and Survey data')
+            )
+            return
+
+        # status 9(EXPIRED)는 파트너/MatchHistory 없이 상태만 변경
+        if match_status == 9:
+            user_property.match_status = match_status
+            user_property.save()
+            self.stdout.write(
+                self.style.SUCCESS(
+                    f'Successfully set EXPIRED status for {email} (no partner/history needed)'
+                )
             )
             return
 

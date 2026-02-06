@@ -419,10 +419,11 @@ class MatchingService:
 
         current_status = property_obj.match_status
 
-        # status 5, 6: 상대방 변경 없이 내 상태만 초기화
+        # status 5, 6, 9: 상대방 변경 없이 내 상태만 초기화
         if current_status in [
             Property.MatchStatusChoice.PARTNER_REJECTED,
-            Property.MatchStatusChoice.PARTNER_REMATCHED
+            Property.MatchStatusChoice.PARTNER_REMATCHED,
+            Property.MatchStatusChoice.EXPIRED
         ]:
             property_obj.match_status = Property.MatchStatusChoice.NOT_STARTED
             property_obj.save()
