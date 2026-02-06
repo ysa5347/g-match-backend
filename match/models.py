@@ -17,6 +17,7 @@ class Property(models.Model):
         BOTH_APPROVED = 4, '둘 다 수락'
         PARTNER_REJECTED = 5, '상대가 거절함'
         PARTNER_REMATCHED = 6, '상대가 재매칭함'
+        EXPIRED = 9, '매칭 만료'
 
     property_id = models.BigAutoField(primary_key=True)
     created_at = models.DateTimeField(auto_now_add=True)
