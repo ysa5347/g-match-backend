@@ -55,7 +55,7 @@ MIDDLEWARE = [
     'corsheaders.middleware.CorsMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
     'django.middleware.common.CommonMiddleware',
-    *(['django.middleware.csrf.CsrfViewMiddleware'] if CSRF_ENABLED else []),
+    # 'django.middleware.csrf.CsrfViewMiddleware',  # CSRF 비활성화 — S3 정적 호스팅 + API 분리 구조
     'django.contrib.auth.middleware.AuthenticationMiddleware',
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
