@@ -134,7 +134,7 @@ class MatchingService:
     def start_matching(self, user_id: int) -> dict:
         property_obj = Property.objects.filter(user_id=user_id).last()
         survey_obj = Survey.objects.filter(user_id=user_id).last()
-
+        print("phase 1")
         if not property_obj or not survey_obj:
             return {
                 "success": False,
