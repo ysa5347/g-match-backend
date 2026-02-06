@@ -46,7 +46,7 @@ class CustomUserManager(BaseUserManager):
                 - phone_number: 전화번호
             extra_data: dict containing additional user info:
                 - gender: 성별 (M/F) - 필수
-                - nickname: 닉네임 - 선택
+                - nickname: 닉네임 - 필수
 
         Returns:
             tuple: (user, created)
