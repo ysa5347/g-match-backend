@@ -2,6 +2,7 @@ from django.http import JsonResponse
 from django.views.decorators.http import require_http_methods
 from django.views.decorators.csrf import csrf_exempt
 from django.shortcuts import redirect
+from django.utils import timezone
 from rest_framework.decorators import api_view
 from rest_framework.response import Response
 from rest_framework import status
@@ -114,7 +115,6 @@ def oidc_callback_view(request):
     """
     GIST IdP OIDC Callback 처리
     GET /api/v1alpha1/account/auth/oidc/callback
-
     처리 완료 후 F/E Auth Callback 페이지로 리다이렉트합니다.
     """
     from django.conf import settings as django_settings
@@ -161,6 +161,34 @@ def oidc_callback_view(request):
             user = CustomUser.objects.filter(email=email).first()
 
         if user:
+            # 비활성화된 사용자인지 확인 (회원탈퇴 후 30일 이내)
+            if not user.is_active:
+                # 30일 초과 확인
+                if user.deactivated_at:
+                    days_since = (timezone.now() - user.deactivated_at).days
+                    if days_since > 30:
+                        # 복구 불가 - 새로 가입 필요
+                        return redirect_to_frontend({
+                            'error': 'account_expired',
+                            'message': '복구 기간이 만료되었습니다. 새로 가입해주세요.',
+                        })
+
+                # 복구 가능 - 복구 페이지로 리다이렉트
+                # 서명된 복구 토큰 생성 (세션 대신 토큰 사용)
+                from django.core.signing import TimestampSigner
+                signer = TimestampSigner()
+                recovery_token = signer.sign(str(user.user_id))
+
+                params = {
+                    'needs_recovery': 'true',
+                    'user_email': user.email,
+                    'recovery_token': recovery_token,
+                }
+                if redirect_after:
+                    params['redirect_after'] = redirect_after
+
+                return redirect_to_frontend(params)
+
             # 기존 사용자: 로그인 처리
             # gist_id 연결 (기존 이메일 사용자인 경우)
             if not user.gist_id:
@@ -538,6 +566,275 @@ def registration_main(request):
         },
         'note': '사용자 정보(이메일, 이름, 학번, 전화번호)는 GIST IdP에서 제공받습니다. 성별은 필수, 닉네임은 선택적으로 입력합니다.'
     }, status=status.HTTP_200_OK)
+
+
+# ============================================
+# 회원탈퇴 API
+# ============================================
+
+@swagger_auto_schema(
+    method='get',
+    operation_summary='회원탈퇴 정보 조회',
+    operation_description='회원탈퇴 시 삭제되는 정보와 주의사항을 조회합니다.',
+    responses={
+        200: openapi.Response('회원탈퇴 정보'),
+        401: openapi.Response('로그인 필요')
+    }
+)
+@swagger_auto_schema(
+    method='post',
+    operation_summary='회원탈퇴 요청',
+    operation_description='''
+    현재 로그인한 사용자의 계정을 비활성화합니다.
+
+    - 계정은 즉시 비활성화되며 로그인이 불가능해집니다.
+    - 30일 이내에 다시 로그인하면 계정을 복구할 수 있습니다.
+    - 30일이 지나면 모든 데이터가 영구 삭제됩니다.
+    ''',
+    request_body=openapi.Schema(
+        type=openapi.TYPE_OBJECT,
+        properties={
+            'confirmation': openapi.Schema(
+                type=openapi.TYPE_STRING,
+                description='탈퇴 확인 문구 ("회원탈퇴"를 입력)'
+            )
+        },
+        required=['confirmation']
+    ),
+    responses={
+        200: openapi.Response('회원탈퇴 성공'),
+        400: openapi.Response('잘못된 요청'),
+        401: openapi.Response('로그인 필요')
+    }
+)
+@api_view(['GET', 'POST', 'OPTIONS'])
+@login_required
+def withdraw_view(request):
+    """
+    회원탈퇴
+    GET/POST /api/v1alpha1/account/auth/withdraw
+    """
+    user = request.user
+
+    if request.method == 'GET':
+        return Response({
+            'success': True,
+            'message': '회원탈퇴 안내',
+            'warning': '회원탈퇴 시 다음 데이터가 삭제됩니다.',
+            'deleted_data': [
+                '계정 정보 (이메일, 이름, 학번 등)',
+                '매칭 프로필 정보',
+                '설문 응답 데이터',
+                '매칭 이력'
+            ],
+            'retention_period': '30일',
+            'recovery_info': '탈퇴 후 30일 이내에 다시 로그인하면 계정을 복구할 수 있습니다.',
+            'confirmation_required': '회원탈퇴',
+        }, status=status.HTTP_200_OK)
+
+    elif request.method == 'POST':
+        confirmation = request.data.get('confirmation', '')
+
+        if confirmation != '회원탈퇴':
+            return Response({
+                'success': False,
+                'error': 'invalid_confirmation',
+                'message': '탈퇴 확인 문구가 올바르지 않습니다. "회원탈퇴"를 정확히 입력해주세요.'
+            }, status=status.HTTP_400_BAD_REQUEST)
+
+        # Soft delete: is_active = False, deactivated_at 설정
+        user.is_active = False
+        user.deactivated_at = timezone.now()
+        user.save()
+
+        # 세션 종료
+        from django.contrib.auth import logout as auth_logout
+        auth_logout(request)
+
+        return Response({
+            'success': True,
+            'message': '회원탈퇴가 완료되었습니다.',
+            'recovery_info': '30일 이내에 다시 로그인하면 계정을 복구할 수 있습니다.'
+        }, status=status.HTTP_200_OK)
+
+
+# ============================================
+# 계정 복구 API
+# ============================================
+
+@swagger_auto_schema(
+    method='get',
+    operation_summary='계정 복구 가능 여부 확인',
+    operation_description='비활성화된 계정의 복구 가능 여부를 확인합니다.',
+    responses={
+        200: openapi.Response('복구 정보'),
+    }
+)
+@swagger_auto_schema(
+    method='post',
+    operation_summary='계정 복구 요청',
+    operation_description='''
+    비활성화된 계정을 복구합니다.
+
+    OIDC 콜백에서 비활성화된 사용자가 감지되면 이 API로 리다이렉트됩니다.
+    복구에 동의하면 계정이 다시 활성화됩니다.
+    ''',
+    request_body=openapi.Schema(
+        type=openapi.TYPE_OBJECT,
+        properties={
+            'confirm_recovery': openapi.Schema(
+                type=openapi.TYPE_BOOLEAN,
+                description='복구 동의 여부'
+            )
+        },
+        required=['confirm_recovery']
+    ),
+    responses={
+        200: openapi.Response('복구 성공'),
+        400: openapi.Response('잘못된 요청'),
+        401: openapi.Response('인증 필요')
+    }
+)
+@api_view(['GET', 'POST', 'OPTIONS'])
+def account_recovery_view(request):
+    """
+    계정 복구
+    GET/POST /api/v1alpha1/account/auth/recovery
+
+    인증 방식:
+    1. X-Recovery-Token 헤더 (서명된 토큰) - 권장
+    2. recovery_token 쿼리 파라미터
+    3. 세션 기반 (fallback)
+    """
+    from datetime import timedelta
+    from django.core.signing import TimestampSigner, BadSignature, SignatureExpired
+
+    recovery_user_id = None
+    token_source = None
+
+    # 1. 헤더에서 토큰 확인
+    recovery_token = request.headers.get('X-Recovery-Token')
+    if not recovery_token:
+        # 2. 쿼리 파라미터에서 토큰 확인
+        recovery_token = request.query_params.get('recovery_token')
+    if not recovery_token:
+        # 3. POST body에서 토큰 확인
+        recovery_token = request.data.get('recovery_token')
+
+    if recovery_token:
+        try:
+            signer = TimestampSigner()
+            # 토큰 유효기간: 30분
+            recovery_user_id = signer.unsign(recovery_token, max_age=1800)
+            token_source = 'token'
+        except SignatureExpired:
+            return Response({
+                'success': False,
+                'error': 'token_expired',
+                'message': '복구 토큰이 만료되었습니다. GIST IdP 로그인을 다시 시도해주세요.',
+                'login_url': '/api/v1alpha1/account/auth/oidc/login'
+            }, status=status.HTTP_401_UNAUTHORIZED)
+        except BadSignature:
+            return Response({
+                'success': False,
+                'error': 'invalid_token',
+                'message': '유효하지 않은 복구 토큰입니다.',
+                'login_url': '/api/v1alpha1/account/auth/oidc/login'
+            }, status=status.HTTP_401_UNAUTHORIZED)
+
+    # 4. 세션에서 확인 (fallback)
+    if not recovery_user_id:
+        recovery_user_id = request.session.get('recovery_user_id')
+        if recovery_user_id:
+            token_source = 'session'
+
+    if not recovery_user_id:
+        return Response({
+            'success': False,
+            'error': 'no_recovery_session',
+            'message': '복구 세션이 없습니다. GIST IdP 로그인을 다시 시도해주세요.',
+            'login_url': '/api/v1alpha1/account/auth/oidc/login'
+        }, status=status.HTTP_401_UNAUTHORIZED)
+
+    try:
+        user = CustomUser.objects.get(user_id=recovery_user_id)
+    except CustomUser.DoesNotExist:
+        if token_source == 'session':
+            del request.session['recovery_user_id']
+        return Response({
+            'success': False,
+            'error': 'user_not_found',
+            'message': '사용자를 찾을 수 없습니다.',
+            'login_url': '/api/v1alpha1/account/auth/oidc/login'
+        }, status=status.HTTP_400_BAD_REQUEST)
+
+    if user.is_active:
+        if token_source == 'session':
+            del request.session['recovery_user_id']
+        return Response({
+            'success': False,
+            'error': 'already_active',
+            'message': '이미 활성화된 계정입니다.',
+        }, status=status.HTTP_400_BAD_REQUEST)
+
+    # 30일 초과 확인
+    if user.deactivated_at:
+        days_since_deactivation = (timezone.now() - user.deactivated_at).days
+        if days_since_deactivation > 30:
+            if token_source == 'session' and 'recovery_user_id' in request.session:
+                del request.session['recovery_user_id']
+            return Response({
+                'success': False,
+                'error': 'recovery_expired',
+                'message': '복구 기간(30일)이 만료되었습니다. 새로 가입해주세요.',
+            }, status=status.HTTP_400_BAD_REQUEST)
+    else:
+        days_since_deactivation = 0
+
+    if request.method == 'GET':
+        remaining_days = max(0, 30 - days_since_deactivation)
+        return Response({
+            'success': True,
+            'message': '계정 복구 안내',
+            'user_email': user.email,
+            'user_name': user.name,
+            'deactivated_at': user.deactivated_at.isoformat() if user.deactivated_at else None,
+            'remaining_days': remaining_days,
+            'recovery_info': f'{remaining_days}일 이내에 복구하지 않으면 모든 데이터가 영구 삭제됩니다.',
+        }, status=status.HTTP_200_OK)
+
+    elif request.method == 'POST':
+        confirm_recovery = request.data.get('confirm_recovery', False)
+
+        if not confirm_recovery:
+            return Response({
+                'success': False,
+                'error': 'recovery_declined',
+                'message': '계정 복구가 취소되었습니다.',
+            }, status=status.HTTP_400_BAD_REQUEST)
+
+        # 계정 복구
+        user.is_active = True
+        user.deactivated_at = None
+        user.save()
+
+        # 세션에서 복구 정보 삭제 (세션 기반인 경우)
+        if token_source == 'session' and 'recovery_user_id' in request.session:
+            del request.session['recovery_user_id']
+
+        # Django auth 로그인
+        from django.contrib.auth import login as auth_login
+        auth_login(request, user)
+
+        return Response({
+            'success': True,
+            'message': '계정이 복구되었습니다.',
+            'user': {
+                'user_id': str(user.user_id),
+                'email': user.email,
+                'name': user.name,
+            }
+        }, status=status.HTTP_200_OK)
 
 
 # ============================================

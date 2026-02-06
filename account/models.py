@@ -137,6 +137,9 @@ class CustomUser(AbstractBaseUser, PermissionsMixin):
     date_joined = models.DateTimeField(auto_now_add=True)
     last_login = models.DateTimeField(auto_now=True)
 
+    # Soft delete를 위한 비활성화 시각 (30일 후 하드 삭제)
+    deactivated_at = models.DateTimeField(null=True, blank=True)
+
     objects = CustomUserManager()
 
     USERNAME_FIELD = 'email'
