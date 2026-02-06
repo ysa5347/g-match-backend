@@ -65,7 +65,8 @@ class ProfileViewSet(viewsets.ViewSet):
                 }, status=status.HTTP_200_OK)
             return Response({
                 "success": False,
-                "error": "property_not_found"
+                "error": "property_not_found",
+                "message": "기본 조건이 아직 작성되지 않았습니다."
             }, status=status.HTTP_404_NOT_FOUND)
 
         if request.method == 'POST':
@@ -79,12 +80,13 @@ class ProfileViewSet(viewsets.ViewSet):
                 )
                 return Response({
                     "success": True,
-                    "message": "Property was created successfully"
+                    "message": "기본 조건이 저장되었습니다."
                 }, status=status.HTTP_201_CREATED)
 
             return Response({
                 "success": False,
                 "error": "validation_failed",
+                "message": "입력값이 올바르지 않습니다.",
                 "details": serializer.errors
             }, status=status.HTTP_400_BAD_REQUEST)
 
@@ -102,7 +104,8 @@ class ProfileViewSet(viewsets.ViewSet):
                 }, status=status.HTTP_200_OK)
             return Response({
                 "success": False,
-                "error": "survey_not_found"
+                "error": "survey_not_found",
+                "message": "설문이 아직 작성되지 않았습니다."
             }, status=status.HTTP_404_NOT_FOUND)
 
         if request.method == 'POST':
@@ -120,12 +123,13 @@ class ProfileViewSet(viewsets.ViewSet):
                 )
                 return Response({
                     "success": True,
-                    "message": "Survey was created successfully"
+                    "message": "설문이 저장되었습니다."
                 }, status=status.HTTP_201_CREATED)
 
             return Response({
                 "success": False,
                 "error": "validation_failed",
+                "message": "입력값이 올바르지 않습니다.",
                 "details": serializer.errors
             }, status=status.HTTP_400_BAD_REQUEST)
 
