@@ -17,7 +17,7 @@ DB_PASSWORD = os.getenv('DB_PASSWORD', '')
 EDGE_POLLING_INTERVAL = int(os.getenv('EDGE_POLLING_INTERVAL', 10))  # 초
 
 # Match Scheduler 설정
-SCHEDULER_INTERVAL = int(os.getenv('SCHEDULER_INTERVAL', 120))  # 초 (2분)
+SCHEDULER_INTERVAL = int(os.getenv('SCHEDULER_INTERVAL', 300))  # 초 (5분)
 MATCH_THRESHOLD = float(os.getenv('MATCH_THRESHOLD', 80.0))  # 최소 매칭 점수
 
 # Lock 설정

@@ -6,10 +6,9 @@ from rest_framework.decorators import action
 from rest_framework.response import Response
 import redis
 
-from account.decorators import identity_check
 from account.models import CustomUser
 from .models import Property, Survey
-from .serializers import PropertySerializer, SurveySerializer
+from .serializers import PropertySerializer, SurveySerializer, ProfilePropertySerializer, ProfileSurveySerializer
 from .profile_service import InsightService
 from .match_service import MatchingService
 
@@ -25,15 +24,15 @@ redis_client = redis.Redis(
 
 class ProfileViewSet(viewsets.ViewSet):
     """프로필 관련 API (Controller)"""
+    permission_classes = [permissions.IsAuthenticated]
 
     PROFILE_STATUS_NO_PROPERTY = 0
     PROFILE_STATUS_NO_SURVEY = 1
     PROFILE_STATUS_COMPLETE = 2
 
-    @identity_check
+
     def list(self, request):
         user = request.user
-
         property_obj = Property.objects.filter(user_id=user.user_id).last()
         survey_obj = Survey.objects.filter(user_id=user.user_id).last()
 
@@ -53,16 +52,19 @@ class ProfileViewSet(viewsets.ViewSet):
             "success": True,
             "profile_status": self.PROFILE_STATUS_COMPLETE,
             "user_id": user.user_id,
-            "property": PropertySerializer(property_obj).data,
-            "survey": SurveySerializer(survey_obj).data,
+            "match_status": property_obj.match_status,
+            "property": ProfilePropertySerializer(property_obj).data,
+            "survey": ProfileSurveySerializer(survey_obj).data,
         }, status=status.HTTP_200_OK)
 
     @action(detail=False, methods=['get', 'post'], url_path='property')
-    @identity_check
+
     def property_info(self, request):
         user = request.user
 
         if request.method == 'GET':
+            # checkpoint
+            # print(user)
             property_obj = Property.objects.filter(user_id=user.user_id).last()
             if property_obj:
                 return Response({
@@ -71,31 +73,42 @@ class ProfileViewSet(viewsets.ViewSet):
                 }, status=status.HTTP_200_OK)
             return Response({
                 "success": False,
-                "error": "property_not_found"
+                "error": "property_not_found",
+                "message": "기본 조건이 아직 작성되지 않았습니다."
             }, status=status.HTTP_404_NOT_FOUND)
 
         if request.method == 'POST':
+            # 매칭 진행 중이면 프로필 수정 불가
+            existing_property = Property.objects.filter(user_id=user.user_id).last()
+            if existing_property and existing_property.match_status != Property.MatchStatusChoice.NOT_STARTED:
+                return Response({
+                    "success": False,
+                    "error": "matching_in_progress",
+                    "message": "매칭 진행 중에는 프로필을 수정할 수 없습니다."
+                }, status=status.HTTP_400_BAD_REQUEST)
+
             serializer = PropertySerializer(data=request.data)
             if serializer.is_valid():
                 serializer.save(
                     user_id=user.user_id,
                     nickname=user.nickname,
-                    student_id=user.student_id,
+                    student_id = int(str(user.student_id)[2:4]),
                     gender=user.gender
                 )
                 return Response({
                     "success": True,
-                    "message": "Property was created successfully"
+                    "message": "기본 조건이 저장되었습니다."
                 }, status=status.HTTP_201_CREATED)
 
             return Response({
                 "success": False,
                 "error": "validation_failed",
+                "message": "입력값이 올바르지 않습니다.",
                 "details": serializer.errors
             }, status=status.HTTP_400_BAD_REQUEST)
 
     @action(detail=False, methods=['get', 'post'], url_path='survey')
-    @identity_check
+
     def survey_info(self, request):
         user = request.user
 
@@ -108,10 +121,20 @@ class ProfileViewSet(viewsets.ViewSet):
                 }, status=status.HTTP_200_OK)
             return Response({
                 "success": False,
-                "error": "survey_not_found"
+                "error": "survey_not_found",
+                "message": "설문이 아직 작성되지 않았습니다."
             }, status=status.HTTP_404_NOT_FOUND)
 
         if request.method == 'POST':
+            # 매칭 진행 중이면 프로필 수정 불가
+            existing_property = Property.objects.filter(user_id=user.user_id).last()
+            if existing_property and existing_property.match_status != Property.MatchStatusChoice.NOT_STARTED:
+                return Response({
+                    "success": False,
+                    "error": "matching_in_progress",
+                    "message": "매칭 진행 중에는 프로필을 수정할 수 없습니다."
+                }, status=status.HTTP_400_BAD_REQUEST)
+
             serializer = SurveySerializer(data=request.data)
             if serializer.is_valid():
                 service = InsightService(
@@ -126,18 +149,20 @@ class ProfileViewSet(viewsets.ViewSet):
                 )
                 return Response({
                     "success": True,
-                    "message": "Survey was created successfully"
+                    "message": "설문이 저장되었습니다."
                 }, status=status.HTTP_201_CREATED)
 
             return Response({
                 "success": False,
                 "error": "validation_failed",
+                "message": "입력값이 올바르지 않습니다.",
                 "details": serializer.errors
             }, status=status.HTTP_400_BAD_REQUEST)
 
 
 class MatchingViewSet(viewsets.ViewSet):
     """매칭 관련 API (Controller)"""
+    permission_classes = [permissions.IsAuthenticated]
 
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
@@ -146,13 +171,14 @@ class MatchingViewSet(viewsets.ViewSet):
     def _get_status_code(self, error: str) -> int:
         error_to_status = {
             "profile_not_found": status.HTTP_404_NOT_FOUND,
+            "prerequisite:profile": status.HTTP_400_BAD_REQUEST,
             "match_history_not_found": status.HTTP_404_NOT_FOUND,
             "partner_data_fetch_failed": status.HTTP_404_NOT_FOUND,
             "invalid_status": status.HTTP_400_BAD_REQUEST,
         }
         return error_to_status.get(error, status.HTTP_500_INTERNAL_SERVER_ERROR)
 
-    @identity_check
+
     def list(self, request):
         """GET /matching/ - 현재 매칭 상태 조회"""
         result = self.service.get_status(request.user.user_id)
@@ -160,7 +186,7 @@ class MatchingViewSet(viewsets.ViewSet):
         return Response(result, status=status_code)
 
     @action(detail=False, methods=['post'], url_path='start')
-    @identity_check
+
     def start(self, request):
         """POST /matching/start/ - 대기열 등록"""
         result = self.service.start_matching(request.user.user_id)
@@ -168,7 +194,7 @@ class MatchingViewSet(viewsets.ViewSet):
         return Response(result, status=status_code)
 
     @action(detail=False, methods=['post'], url_path='cancel')
-    @identity_check
+
     def cancel(self, request):
         """POST /matching/cancel/ - 매칭 취소"""
         result = self.service.cancel_matching(request.user.user_id)
@@ -176,7 +202,7 @@ class MatchingViewSet(viewsets.ViewSet):
         return Response(result, status=status_code)
 
     @action(detail=False, methods=['get'], url_path='result')
-    @identity_check
+
     def result(self, request):
         """GET /matching/result/ - 매칭 결과 상세 조회"""
         result = self.service.get_result(request.user.user_id)
@@ -190,13 +216,13 @@ class MatchingViewSet(viewsets.ViewSet):
             "match_id": result["match_id"],
             "compatibility_score": result["compatibility_score"],
             "partner": {
-                "property": PropertySerializer(result["partner_property"]).data,
-                "survey": SurveySerializer(result["partner_survey"]).data
+                "property": ProfilePropertySerializer(result["partner_property"]).data,
+                "survey": ProfileSurveySerializer(result["partner_survey"]).data
             }
         }, status=status.HTTP_200_OK)
 
     @action(detail=False, methods=['post'], url_path='agree')
-    @identity_check
+
     def agree(self, request):
         """POST /matching/agree/ - 매칭 수락"""
         result = self.service.agree(request.user.user_id)
@@ -204,16 +230,15 @@ class MatchingViewSet(viewsets.ViewSet):
         return Response(result, status=status_code)
 
     @action(detail=False, methods=['post'], url_path='reject')
-    @identity_check
+
     def reject(self, request):
         """POST /matching/reject/ - 매칭 거절"""
         result = self.service.reject(request.user.user_id)
         status_code = status.HTTP_200_OK if result["success"] else self._get_status_code(result.get("error"))
         return Response(result, status=status_code)
 
-    # ACCOUNT와 연동 필요
     @action(detail=False, methods=['get'], url_path='contact')
-    @identity_check
+
     def contact(self, request):
         """GET /matching/contact/ - 상대방 연락처 조회"""
         result = self.service.get_contact(request.user.user_id)
@@ -225,13 +250,15 @@ class MatchingViewSet(viewsets.ViewSet):
             "success": True,
             "match_status": result["match_status"],
             "partner": {
-                "user_id": result["partner_id"],
-                "nickname": result["partner_nickname"],
+                "name": result["partner_name"],
+                "phone": result["partner_phone"],
+                "gender": result["partner_gender"],
+                "student_id": result["partner_student_id"],
             }
         }, status=status.HTTP_200_OK)
 
     @action(detail=False, methods=['post'], url_path='rematch')
-    @identity_check
+
     def rematch(self, request):
         """POST /matching/rematch/ - 재매칭 요청"""
         result = self.service.rematch(request.user.user_id)

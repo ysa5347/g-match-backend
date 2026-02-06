@@ -46,7 +46,7 @@ class CustomUserManager(BaseUserManager):
                 - phone_number: 전화번호
             extra_data: dict containing additional user info:
                 - gender: 성별 (M/F) - 필수
-                - house: 기숙사 동 - 선택
+                - nickname: 닉네임 - 필수
 
         Returns:
             tuple: (user, created)
@@ -89,9 +89,9 @@ class CustomUserManager(BaseUserManager):
             'phone_number': oidc_user_info.get('phone_number'),
         }
 
-        # 추가 정보 병합 (gender, house)
+        # 추가 정보 병합 (gender, nickname)
         if extra_data:
-            for key in ['gender', 'house']:
+            for key in ['gender', 'nickname']:
                 if key in extra_data and extra_data[key] is not None:
                     user_data[key] = extra_data[key]
 
@@ -136,6 +136,9 @@ class CustomUser(AbstractBaseUser, PermissionsMixin):
     is_staff = models.BooleanField(default=False)
     date_joined = models.DateTimeField(auto_now_add=True)
     last_login = models.DateTimeField(auto_now=True)
+
+    # Soft delete를 위한 비활성화 시각 (30일 후 하드 삭제)
+    deactivated_at = models.DateTimeField(null=True, blank=True)
 
     objects = CustomUserManager()
 

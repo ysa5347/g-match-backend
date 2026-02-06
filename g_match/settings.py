@@ -27,12 +27,9 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 SECRET_KEY = os.getenv('SECRET_KEY')
 
 # SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = True
+DEBUG = os.getenv('DEBUG', 'False').lower() in ('true', '1', 'yes')
 
-ALLOWED_HOSTS = [
-    'localhost'
-]
-
+ALLOWED_HOSTS = os.getenv('ALLOWED_HOSTS', 'localhost').split(',')
 
 # Application definition
 
@@ -50,6 +47,8 @@ INSTALLED_APPS = [
     'account',
     'match',
 ]
+
+CSRF_ENABLED = os.getenv('CSRF_ENABLED', 'True').lower() in ('true', '1', 'yes')
 
 MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',
@@ -144,10 +143,44 @@ AUTH_USER_MODEL = 'account.CustomUser'
 # CORS Settings
 CORS_ALLOWED_ORIGINS = [
     "http://localhost:3000",
+    "http://localhost:8080",
     "http://127.0.0.1:3000",
-    "https://www.g-match.com"
+    "http://localhost:8080",
+    "http://127.0.0.1:8080",
+    "http://www.g-match.org",
+    "https://www.g-match.org",
 ]
 CORS_ALLOW_CREDENTIALS = True
+CORS_ALLOW_HEADERS = [
+    'accept',
+    'accept-encoding',
+    'authorization',
+    'content-type',
+    'dnt',
+    'origin',
+    'user-agent',
+    'x-csrftoken',
+    'x-requested-with',
+    'x-registration-token',  # 회원가입 토큰 헤더
+    'x-recovery-token',  # 복구 토큰 헤더
+]
+
+# Reverse Proxy Settings (Cloudflare Tunnel → Traefik → Django)
+# Cloudflare terminates TLS; internal traffic is HTTP
+SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
+USE_X_FORWARDED_HOST = True
+USE_X_FORWARDED_PORT = True
+
+# CSRF Settings
+# Dev 환경: CSRF_ENABLED=False (.env) → 미들웨어 제외, 쿠키/trusted origins 불필요
+# Prod 환경: CSRF_ENABLED=True (기본값) → 미들웨어 활성, axios가 csrftoken 쿠키 → X-CSRFToken 헤더
+if CSRF_ENABLED:
+    CSRF_TRUSTED_ORIGINS = [
+        'https://api.g-match.org',
+        'https://www.g-match.org',
+    ]
+    CSRF_COOKIE_HTTPONLY = False  # F/E(axios)가 쿠키를 읽을 수 있어야 함
+    CSRF_COOKIE_SAMESITE = 'Lax'
 
 # Session Settings
 # SESSION_ENGINE = 'django.contrib.sessions.backends.db'
@@ -173,6 +206,8 @@ CACHES = {
 }
 
 # REST Framework Settings
+# DRF의 SessionAuthentication은 Django 미들웨어와 별개로 자체 CSRF 검증을 수행함.
+# CSRF_ENABLED=False인 환경에서는 CSRF를 강제하지 않는 커스텀 인증 클래스를 사용.
 REST_FRAMEWORK = {
     'DEFAULT_RENDERER_CLASSES': [
         'rest_framework.renderers.JSONRenderer',
@@ -180,6 +215,11 @@ REST_FRAMEWORK = {
     ],
     'DEFAULT_PARSER_CLASSES': [
         'rest_framework.parsers.JSONParser',
+    ],
+    'DEFAULT_AUTHENTICATION_CLASSES': [
+        'rest_framework.authentication.SessionAuthentication',
+    ] if CSRF_ENABLED else [
+        'g_match.authentication.CsrfExemptSessionAuthentication',
     ],
 }
 

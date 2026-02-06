@@ -21,11 +21,17 @@ htmlcov/
 # Documentation
 CLAUDE/
 *.md
-!requirements.txt
 
 # Git
 .git/
 .gitignore
+
+# CI/CD
+.github/
+k8s/
+docker-compose*.yml
+Dockerfile*
+nginx.conf
 
 # IDE
 .vscode/
@@ -47,6 +53,9 @@ media/
 
 # macOS
 .DS_Store
+
+# Matcher (separate project)
+matcher/
 
 # Misc
 *.csv
