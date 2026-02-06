@@ -108,7 +108,7 @@ class MatchingService:
         property_obj = Property.objects.filter(user_id=user_id).last()
 
         if not property_obj:
-            return {"success": False, "error": "profile_not_found"}
+            return {"success": False, "error": "profile_not_found", "message": "프로필을 먼저 작성해주세요."}
 
         match_status = property_obj.match_status
 
@@ -134,9 +134,13 @@ class MatchingService:
     def start_matching(self, user_id: int) -> dict:
         property_obj = Property.objects.filter(user_id=user_id).last()
         survey_obj = Survey.objects.filter(user_id=user_id).last()
-
+        print("phase 1")
         if not property_obj or not survey_obj:
-            return {"success": False, "error": "prerequisite:profile"}
+            return {
+                "success": False,
+                "error": "prerequisite: profile",
+                "message": "프로필과 설문을 먼저 완성해주세요."
+            }
 
         if property_obj.match_status != Property.MatchStatusChoice.NOT_STARTED:
             return {
@@ -160,7 +164,11 @@ class MatchingService:
         property_obj = Property.objects.filter(user_id=user_id).last()
 
         if not property_obj:
-            return {"success": False, "error": "prerequisite:profile"}
+            return {
+                "success": False,
+                "error": "prerequisite: profile",
+                "message": "프로필을 먼저 작성해주세요."
+            }
 
         current_status = property_obj.match_status
 
@@ -197,13 +205,18 @@ class MatchingService:
             ).order_by('-matched_at').first()
 
             if not match_history:
-                return {"success": False, "error": "match_history_not_found"}
+                return {
+                    "success": False,
+                    "error": "match_history_not_found",
+                    "message": "매칭 기록을 찾을 수 없습니다."
+                }
 
             # 이미 FAILED면 상대가 먼저 거절한 것
             if match_history.final_match_status == MatchHistory.ResultStatus.FAILED:
                 return {
                     "success": False,
                     "error": "invalid_status",
+                    "message": "상대방이 이미 매칭을 거절했습니다.",
                     "match_failed": True
                 }
 
@@ -218,13 +231,18 @@ class MatchingService:
             partner_prop = prop_b if user_id == user_a_id else prop_a
 
             if not my_prop or not partner_prop:
-                return {"success": False, "error": "prerequisite:profile"}
+                return {
+                    "success": False,
+                    "error": "prerequisite: profile",
+                    "message": "프로필 정보를 찾을 수 없습니다."
+                }
 
             # 상태 검증
             if my_prop.match_status != expected_status:
                 return {
                     "success": False,
                     "error": "invalid_status",
+                    "message": "매칭 상태가 변경되었습니다. 새로고침 해주세요.",
                     "match_status": my_prop.match_status
                 }
 
@@ -254,7 +272,11 @@ class MatchingService:
         property_obj = Property.objects.filter(user_id=user_id).last()
 
         if not property_obj:
-            return {"success": False, "error": "prerequisite:profile"}
+            return {
+                "success": False,
+                "error": "prerequisite: profile",
+                "message": "프로필을 먼저 작성해주세요."
+            }
 
         current_status = property_obj.match_status
         allowed_statuses = [
@@ -267,12 +289,17 @@ class MatchingService:
             return {
                 "success": False,
                 "error": "invalid_status",
+                "message": "현재 상태에서는 매칭 결과를 조회할 수 없습니다.",
                 "match_status": current_status
             }
 
         match_history = self.history_service.get_by_status(user_id, current_status)
         if not match_history:
-            return {"success": False, "error": "match_history_not_found"}
+            return {
+                "success": False,
+                "error": "match_history_not_found",
+                "message": "매칭 기록을 찾을 수 없습니다."
+            }
 
         partner_prop_id, partner_surv_id = self.history_service.get_partner_profile_ids(
             match_history, user_id
@@ -281,7 +308,12 @@ class MatchingService:
         partner_survey = Survey.objects.filter(survey_id=partner_surv_id).first()
 
         if not partner_property or not partner_survey:
-            return {"success": False, "error": "partner_data_fetch_failed", "retry": True}
+            return {
+                "success": False,
+                "error": "partner_data_fetch_failed",
+                "message": "상대방 프로필을 불러올 수 없습니다.",
+                "retry": True
+            }
 
         return {
             "success": True,
@@ -301,12 +333,17 @@ class MatchingService:
             ).order_by('-matched_at').first()
 
             if not match_history:
-                return {"success": False, "error": "match_history_not_found"}
+                return {
+                    "success": False,
+                    "error": "match_history_not_found",
+                    "message": "매칭 기록을 찾을 수 없습니다."
+                }
 
             if match_history.final_match_status == MatchHistory.ResultStatus.FAILED:
                 return {
                     "success": False,
                     "error": "invalid_status",
+                    "message": "상대방이 이미 매칭을 거절했습니다.",
                     "match_failed": True
                 }
 
@@ -321,12 +358,17 @@ class MatchingService:
             partner_prop = prop_b if user_id == user_a_id else prop_a
 
             if not my_prop or not partner_prop:
-                return {"success": False, "error": "prerequisite:profile"}
+                return {
+                    "success": False,
+                    "error": "prerequisite: profile",
+                    "message": "프로필 정보를 찾을 수 없습니다."
+                }
 
             if my_prop.match_status != Property.MatchStatusChoice.MATCHED:
                 return {
                     "success": False,
                     "error": "invalid_status",
+                    "message": "현재 상태에서는 수락할 수 없습니다.",
                     "match_status": my_prop.match_status
                 }
 
@@ -365,7 +407,11 @@ class MatchingService:
         property_obj = Property.objects.filter(user_id=user_id).last()
 
         if not property_obj:
-            return {"success": False, "error": "prerequisite:profile"}
+            return {
+                "success": False,
+                "error": "prerequisite: profile",
+                "message": "프로필을 먼저 작성해주세요."
+            }
 
         current_status = property_obj.match_status
         allowed_statuses = [
@@ -377,24 +423,37 @@ class MatchingService:
             return {
                 "success": False,
                 "error": "invalid_status",
+                "message": "현재 상태에서는 연락처를 조회할 수 없습니다.",
                 "match_status": current_status
             }
 
         match_history = self.history_service.get_by_status(user_id, current_status)
         if not match_history:
-            return {"success": False, "error": "match_history_not_found"}
+            return {
+                "success": False,
+                "error": "match_history_not_found",
+                "message": "매칭 기록을 찾을 수 없습니다."
+            }
 
         partner_id = self.history_service.get_partner_id(match_history, user_id)
 
         # 상대방의 CustomUser 정보 가져오기
         partner_user = CustomUser.objects.filter(user_id=partner_id).first()
         if not partner_user:
-            return {"success": False, "error": "partner_data_fetch_failed"}
+            return {
+                "success": False,
+                "error": "partner_data_fetch_failed",
+                "message": "상대방 정보를 불러올 수 없습니다."
+            }
 
         # 상대방의 Property 정보 가져오기
         partner_property = Property.objects.filter(user_id=partner_id).last()
         if not partner_property:
-            return {"success": False, "error": "partner_data_fetch_failed"}
+            return {
+                "success": False,
+                "error": "partner_data_fetch_failed",
+                "message": "상대방 프로필을 불러올 수 없습니다."
+            }
 
         # 학번의 3, 4번째 자리만 추출 (예: 2024 -> 24)
         student_id_str = str(partner_user.student_id)
@@ -415,7 +474,11 @@ class MatchingService:
         property_obj = Property.objects.filter(user_id=user_id).last()
 
         if not property_obj:
-            return {"success": False, "error": "prerequisite:profile"}
+            return {
+                "success": False,
+                "error": "prerequisite: profile",
+                "message": "프로필을 먼저 작성해주세요."
+            }
 
         current_status = property_obj.match_status
 
@@ -436,6 +499,7 @@ class MatchingService:
         return {
             "success": False,
             "error": "invalid_status",
+            "message": "현재 상태에서는 재매칭할 수 없습니다.",
             "match_status": current_status
         }
 
@@ -448,7 +512,11 @@ class MatchingService:
             ).order_by('-matched_at').first()
 
             if not match_history:
-                return {"success": False, "error": "match_history_not_found"}
+                return {
+                    "success": False,
+                    "error": "match_history_not_found",
+                    "message": "매칭 기록을 찾을 수 없습니다."
+                }
 
             # 두 property를 id 순서대로 락 (데드락 방지)
             user_a_id = match_history.user_a_id
@@ -461,13 +529,18 @@ class MatchingService:
             partner_prop = prop_b if user_id == user_a_id else prop_a
 
             if not my_prop:
-                return {"success": False, "error": "prerequisite:profile"}
+                return {
+                    "success": False,
+                    "error": "prerequisite: profile",
+                    "message": "프로필 정보를 찾을 수 없습니다."
+                }
 
             # 상태 검증
             if my_prop.match_status != Property.MatchStatusChoice.BOTH_APPROVED:
                 return {
                     "success": False,
                     "error": "invalid_status",
+                    "message": "매칭 상태가 변경되었습니다. 새로고침 해주세요.",
                     "match_status": my_prop.match_status
                 }
 

@@ -163,6 +163,7 @@ CORS_ALLOW_HEADERS = [
     'x-csrftoken',
     'x-requested-with',
     'x-registration-token',  # 회원가입 토큰 헤더
+    'x-recovery-token',  # 복구 토큰 헤더
 ]
 
 # Reverse Proxy Settings (Cloudflare Tunnel → Traefik → Django)

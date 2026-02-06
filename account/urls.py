@@ -17,6 +17,12 @@ urlpatterns = [
     # Auth - Logout
     path('auth/logout', views.logout_view, name='logout'),
 
+    # Auth - Withdraw (회원탈퇴)
+    path('auth/withdraw', views.withdraw_view, name='withdraw'),
+
+    # Auth - Recovery (계정 복구)
+    path('auth/recovery', views.account_recovery_view, name='account_recovery'),
+
     # Auth - Registration main
     path('auth/registration', views.registration_main, name='registration_main'),
 
