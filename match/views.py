@@ -34,6 +34,7 @@ class ProfileViewSet(viewsets.ViewSet):
     def list(self, request):
         user = request.user
         property_obj = Property.objects.filter(user_id=user.user_id).last()
+        print(property_obj.property_id)
         survey_obj = Survey.objects.filter(user_id=user.user_id).last()
 
         if not property_obj:
