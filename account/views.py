@@ -71,33 +71,6 @@ def oidc_login_view(request):
     """
     redirect_after = request.GET.get('redirect_after')
 
-    # iOS Safari 감지 및 경고
-    # Safari UA: "Safari" in UA and "Chrome" not in UA (Chrome도 Safari를 포함함)
-    user_agent = request.headers.get('User-Agent', '')
-    is_ios_safari = ('Safari' in user_agent and
-                     'Chrome' not in user_agent and
-                     'CriOS' not in user_agent and  # iOS Chrome
-                     ('iPhone' in user_agent or 'iPad' in user_agent))
-
-    # bypass 파라미터가 있으면 경고 무시
-    bypass_warning = request.GET.get('bypass') == 'true'
-
-    if is_ios_safari and not bypass_warning:
-        # AJAX 요청인 경우 JSON 경고 응답
-        if request.headers.get('Accept') == 'application/json':
-            return Response({
-                'success': False,
-                'warning': 'safari_compatibility',
-                'message': 'iOS Safari에서 GIST 로그인에 문제가 발생할 수 있습니다. Chrome 브라우저 사용을 권장합니다.',
-                'bypass_url': f"{request.build_absolute_uri()}{'&' if '?' in request.build_absolute_uri() else '?'}bypass=true"
-            }, status=status.HTTP_200_OK)
-
-        # 일반 요청인 경우 경고 페이지로 리디렉트 (F/E에서 처리)
-        from django.conf import settings as django_settings
-        frontend_url = django_settings.FRONTEND_URL
-        warning_params = f"?warning=safari_compatibility&redirect_after={redirect_after or ''}"
-        return redirect(f"{frontend_url}/auth/browser-warning{warning_params}")
-
     # Authorization URL 생성
     auth_data = build_authorization_url(redirect_after)
 
