@@ -579,6 +579,10 @@ class MatchingService:
                 # 상대방에게 재매칭 알림 이메일 발송
                 MatchEmailService.notify_partner_rematched(partner_id)
 
+            # 매칭 히스토리 상태를 FAILED로 변경
+            match_history.final_match_status = MatchHistory.ResultStatus.FAILED
+            match_history.save()
+
             # 내 상태 초기화
             my_prop.match_status = Property.MatchStatusChoice.NOT_STARTED
             my_prop.save()
