@@ -1,0 +1,33 @@
+{% extends "match/email/base.html" %}
+
+{% block title %}새로운 룸메이트 후보가 매칭되었습니다 - G-Match{% endblock %}
+
+{% block content %}
+<h1>새로운 룸메이트 후보를 찾았습니다!</h1>
+
+<p>안녕하세요, <span class="highlight">{{ user_name }}</span>님!</p>
+
+<p>G-Match에서 회원님과 잘 맞을 것 같은 룸메이트 후보를 찾았습니다.</p>
+
+{% if partner_nickname or compatibility_score %}
+<div class="info-box">
+    {% if partner_nickname %}
+    <p><strong>상대방 닉네임:</strong> {{ partner_nickname }}</p>
+    {% endif %}
+    {% if compatibility_score %}
+    <p><strong>호환성 점수:</strong> {{ compatibility_score }}점</p>
+    {% endif %}
+</div>
+{% endif %}
+
+<p>상대방의 프로필을 확인하고 <strong>48시간 이내에</strong> 수락 여부를 결정해주세요.</p>
+
+<div style="text-align: center;">
+    <a href="{{ match_url }}" class="cta-button">프로필 확인하기</a>
+</div>
+
+<p style="font-size: 14px; color: #6b7280;">
+    상대방도 회원님의 프로필을 확인하고 있습니다.<br>
+    양쪽 모두 수락하면 서로의 연락처가 공개됩니다.
+</p>
+{% endblock %}

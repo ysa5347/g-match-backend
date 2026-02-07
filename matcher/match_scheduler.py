@@ -27,6 +27,7 @@ from config import (
     SCHEDULER_INTERVAL, MATCH_THRESHOLD, LOCK_KEY, LOCK_EXPIRE,
     USER_QUEUE_PATTERN, USER_QUEUE_PREFIX, EDGE_PATTERN
 )
+from email_notifier import get_notifier
 
 logging.basicConfig(
     level=logging.INFO,
@@ -174,11 +175,12 @@ def find_matching_pairs(edges: list[dict], users: dict[str, dict], threshold: fl
     return matched_pairs
 
 
-# == 5. MatchHistory 저장 + user-queue 삭제 ==================
+# == 5. MatchHistory 저장 + user-queue 삭제 + 이메일 알림 ==================
 def process_matched_pairs(r: redis.Redis, conn, matched_pairs: list[dict], users: dict[str, dict]) -> set[str]:
-    """매칭된 쌍 처리: DB 저장 + user-queue 삭제 (edge 정리는 다음 사이클에서)"""
+    """매칭된 쌍 처리: DB 저장 + user-queue 삭제 + 이메일 알림 (edge 정리는 다음 사이클에서)"""
     removed_users = set()
     cursor = conn.cursor()
+    notifier = get_notifier()
 
     for edge in matched_pairs:
         user_a_id, user_b_id = edge['user_a_id'], edge['user_b_id']
@@ -207,6 +209,10 @@ def process_matched_pairs(r: redis.Redis, conn, matched_pairs: list[dict], users
                 (user_a['property_id'], user_b['property_id'])
             )
             logger.info(f"MatchHistory saved: {user_a_id} <-> {user_b_id} (score: {edge['score']})")
+
+            # 매칭 완료 이메일 알림 발송
+            _send_match_notifications(conn, cursor, user_a, user_b, edge['score'], notifier)
+
         except Exception as e:
             logger.error(f"Failed to save match history: {e}")
             continue
@@ -220,6 +226,41 @@ def process_matched_pairs(r: redis.Redis, conn, matched_pairs: list[dict], users
     cursor.close()
 
     return removed_users
+
+
+def _send_match_notifications(conn, cursor, user_a: dict, user_b: dict, score: float, notifier):
+    """매칭된 양쪽 사용자에게 이메일 알림 발송"""
+    try:
+        # 사용자 정보 조회 (이메일, 닉네임)
+        cursor.execute(
+            "SELECT user_id, email, nickname, name FROM account_customuser WHERE user_id IN (%s, %s)",
+            (user_a['user_id'], user_b['user_id'])
+        )
+        user_info = {str(row[0]): {'email': row[1], 'nickname': row[2], 'name': row[3]} for row in cursor.fetchall()}
+
+        info_a = user_info.get(user_a['user_id'], {})
+        info_b = user_info.get(user_b['user_id'], {})
+
+        # User A에게 알림
+        if info_a.get('email'):
+            notifier.notify_matched(
+                user_email=info_a['email'],
+                user_name=info_a.get('nickname') or info_a.get('name') or '사용자',
+                partner_nickname=info_b.get('nickname'),
+                compatibility_score=score
+            )
+
+        # User B에게 알림
+        if info_b.get('email'):
+            notifier.notify_matched(
+                user_email=info_b['email'],
+                user_name=info_b.get('nickname') or info_b.get('name') or '사용자',
+                partner_nickname=info_a.get('nickname'),
+                compatibility_score=score
+            )
+
+    except Exception as e:
+        logger.error(f"Failed to send match notifications: {e}")
 
 
 # == 6. 만료 유저 제거 (24시간 초과) ==========================
