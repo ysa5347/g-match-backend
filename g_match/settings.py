@@ -48,14 +48,14 @@ INSTALLED_APPS = [
     'match',
 ]
 
-CSRF_ENABLED = os.getenv('CSRF_ENABLED', 'True').lower() in ('true', '1', 'yes')
+CSRF_ENABLED = os.getenv('CSRF_ENABLED', 'False').lower() in ('true', '1', 'yes')
 
 MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',
     'corsheaders.middleware.CorsMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
     'django.middleware.common.CommonMiddleware',
-    *(['django.middleware.csrf.CsrfViewMiddleware'] if CSRF_ENABLED else []),
+    # 'django.middleware.csrf.CsrfViewMiddleware',  # CSRF 비활성화 — S3 정적 호스팅 + API 분리 구조
     'django.contrib.auth.middleware.AuthenticationMiddleware',
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
@@ -66,7 +66,9 @@ ROOT_URLCONF = 'g_match.urls'
 TEMPLATES = [
     {
         'BACKEND': 'django.template.backends.django.DjangoTemplates',
-        'DIRS': [],
+        'DIRS': [
+            BASE_DIR / 'match' / 'templates',  # 이메일 템플릿 디렉토리
+        ],
         'APP_DIRS': True,
         'OPTIONS': {
             'context_processors': [
@@ -131,6 +133,7 @@ USE_TZ = True
 # https://docs.djangoproject.com/en/5.2/howto/static-files/
 
 STATIC_URL = 'static/'
+STATIC_ROOT = os.getenv('STATIC_ROOT', BASE_DIR / 'staticfiles')
 
 # Default primary key field type
 # https://docs.djangoproject.com/en/5.2/ref/settings/#default-auto-field
@@ -159,9 +162,9 @@ CORS_ALLOW_HEADERS = [
     'dnt',
     'origin',
     'user-agent',
-    'x-csrftoken',
     'x-requested-with',
     'x-registration-token',  # 회원가입 토큰 헤더
+    'x-recovery-token',  # 복구 토큰 헤더
 ]
 
 # Reverse Proxy Settings (Cloudflare Tunnel → Traefik → Django)

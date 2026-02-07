@@ -52,4 +52,5 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
     CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:8000/api/v1alpha1/account/')" || exit 1
 
 # Run gunicorn
-CMD ["gunicorn", "g_match.wsgi:application", "--bind", "0.0.0.0:8000", "--workers", "2"]
+# CMD ["gunicorn", "g_match.wsgi:application", "--bind", "0.0.0.0:8000", "--workers", "2"]
+CMD ["python", "manage.py", "runserver", "0.0.0.0:8000"]
