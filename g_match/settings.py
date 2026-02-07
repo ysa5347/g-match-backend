@@ -325,5 +325,22 @@ LOGGING = {
             'level': 'DEBUG',
             'propagate': True,
         },
+        # Email 트러블슈팅 로거 (Django web server)
+        'email.verification': {
+            'handlers': ['console'],
+            'level': 'DEBUG',
+            'propagate': False,
+        },
+        'email.match_service': {
+            'handlers': ['console'],
+            'level': 'DEBUG',
+            'propagate': False,
+        },
+        # Django 내장 email 백엔드 디버그
+        'django.core.mail': {
+            'handlers': ['console'],
+            'level': 'DEBUG',
+            'propagate': False,
+        },
     },
 }

@@ -17,6 +17,7 @@ import json
 import time
 import uuid
 import logging
+import traceback
 from datetime import datetime, timezone, timedelta
 import pymysql
 import redis
@@ -29,10 +30,7 @@ from config import (
 )
 from email_notifier import get_notifier
 
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-)
+# logging.basicConfig은 config.py에서 설정됨 (DEBUG level)
 logger = logging.getLogger('match_scheduler')
 
 # Lua script: 본인 락인지 확인 후 삭제
@@ -243,6 +241,10 @@ def process_matched_pairs(r: redis.Redis, conn, matched_pairs: list[dict], users
 
 def _send_match_notifications(conn, cursor, user_a: dict, user_b: dict, score: float, notifier):
     """매칭된 양쪽 사용자에게 이메일 알림 발송"""
+    logger.info(
+        f"[MATCH_NOTIFY_START] user_a={user_a['user_id']}, user_b={user_b['user_id']}, "
+        f"score={score}, notifier_enabled={notifier.enabled}"
+    )
     try:
         # UUID를 MySQL 형식으로 변환
         uuid_a = normalize_uuid(user_a['user_id'])
@@ -253,32 +255,45 @@ def _send_match_notifications(conn, cursor, user_a: dict, user_b: dict, score: f
             "SELECT user_id, email, nickname, name FROM account_customuser WHERE user_id IN (%s, %s)",
             (uuid_a, uuid_b)
         )
+        rows = cursor.fetchall()
         # DB에서 반환되는 user_id도 32자 hex이므로 그대로 사용
-        user_info = {row[0]: {'email': row[1], 'nickname': row[2], 'name': row[3]} for row in cursor.fetchall()}
+        user_info = {row[0]: {'email': row[1], 'nickname': row[2], 'name': row[3]} for row in rows}
+
+        logger.info(
+            f"[MATCH_NOTIFY_DB] Found {len(rows)} users in DB, "
+            f"user_a_email={user_info.get(uuid_a, {}).get('email', 'NOT_FOUND')}, "
+            f"user_b_email={user_info.get(uuid_b, {}).get('email', 'NOT_FOUND')}"
+        )
 
         info_a = user_info.get(uuid_a, {})
         info_b = user_info.get(uuid_b, {})
 
         # User A에게 알림
         if info_a.get('email'):
+            logger.info(f"[MATCH_NOTIFY] Sending matched email to user_a: {info_a['email']}")
             notifier.notify_matched(
                 user_email=info_a['email'],
                 user_name=info_a.get('nickname') or info_a.get('name') or '사용자',
                 partner_nickname=info_b.get('nickname'),
                 compatibility_score=score
             )
+        else:
+            logger.warning(f"[MATCH_NOTIFY_SKIP] No email for user_a: uuid={uuid_a}")
 
         # User B에게 알림
         if info_b.get('email'):
+            logger.info(f"[MATCH_NOTIFY] Sending matched email to user_b: {info_b['email']}")
             notifier.notify_matched(
                 user_email=info_b['email'],
                 user_name=info_b.get('nickname') or info_b.get('name') or '사용자',
                 partner_nickname=info_a.get('nickname'),
                 compatibility_score=score
             )
+        else:
+            logger.warning(f"[MATCH_NOTIFY_SKIP] No email for user_b: uuid={uuid_b}")
 
     except Exception as e:
-        logger.error(f"Failed to send match notifications: {e}")
+        logger.error(f"[MATCH_NOTIFY_FAIL] error_type={type(e).__name__}, error={e}\n{traceback.format_exc()}")
 
 
 # == 6. 만료 유저 제거 (24시간 초과) ==========================
@@ -340,8 +355,10 @@ def remove_expired_users(r: redis.Redis, conn):
 
 def _send_expired_notifications(conn, cursor, expired_user_ids: list):
     """만료된 사용자들에게 이메일 알림 발송"""
+    logger.info(f"[EXPIRED_NOTIFY_START] Sending expired notifications to {len(expired_user_ids)} users")
     notifier = get_notifier()
     if not notifier.enabled:
+        logger.warning("[EXPIRED_NOTIFY_SKIP] Email notifier is disabled")
         return
 
     try:
@@ -351,19 +368,22 @@ def _send_expired_notifications(conn, cursor, expired_user_ids: list):
             expired_user_ids
         )
         users = cursor.fetchall()
+        logger.info(f"[EXPIRED_NOTIFY_DB] Found {len(users)} users in DB for {len(expired_user_ids)} expired IDs")
 
         for user in users:
             user_id, email, nickname, name = user
             if email:
                 user_name = nickname or name or '사용자'
+                logger.info(f"[EXPIRED_NOTIFY] Sending expired email to {email} (user={user_name})")
                 notifier.notify_expired(
                     user_email=email,
                     user_name=user_name
                 )
-                logger.info(f"Sent expired notification to {email}")
+            else:
+                logger.warning(f"[EXPIRED_NOTIFY_SKIP] No email for user_id={user_id}")
 
     except Exception as e:
-        logger.error(f"Failed to send expired notifications: {e}")
+        logger.error(f"[EXPIRED_NOTIFY_FAIL] error_type={type(e).__name__}, error={e}\n{traceback.format_exc()}")
 
 
 # == 7. 남은 유저 aging ======================================

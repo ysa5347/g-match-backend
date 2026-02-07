@@ -5,6 +5,7 @@ Email Notifier for Matcher
 """
 import logging
 import smtplib
+import traceback
 import threading
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
@@ -28,10 +29,14 @@ class EmailNotifier:
 
     def __init__(self):
         self.enabled = EMAIL_ENABLED and SMTP_HOST
-        if self.enabled:
-            logger.info(f"Email notifier initialized with SMTP ({SMTP_HOST}:{SMTP_PORT})")
-        else:
-            logger.info("Email notifier disabled (EMAIL_ENABLED=false or missing SMTP_HOST)")
+        logger.info(
+            f"[INIT] EmailNotifier: enabled={self.enabled}, "
+            f"EMAIL_ENABLED={EMAIL_ENABLED}, SMTP_HOST={SMTP_HOST}, SMTP_PORT={SMTP_PORT}, "
+            f"SMTP_USE_TLS={SMTP_USE_TLS}, "
+            f"SMTP_USERNAME={SMTP_USERNAME or '(empty)'}, "
+            f"SMTP_PASSWORD={'***' if SMTP_PASSWORD else '(empty)'}, "
+            f"DEFAULT_FROM_EMAIL={DEFAULT_FROM_EMAIL}"
+        )
 
     def notify_matched(
         self,
@@ -42,8 +47,13 @@ class EmailNotifier:
         async_send: bool = True
     ) -> bool:
         """매칭됨 알림 발송"""
+        logger.info(
+            f"[NOTIFY_MATCHED] to={user_email}, user={user_name}, "
+            f"partner={partner_nickname}, score={compatibility_score}, async={async_send}"
+        )
+
         if not self.enabled:
-            logger.debug(f"Email disabled, skipping notification to {user_email}")
+            logger.warning(f"[NOTIFY_SKIP] Email disabled, skipping notification to {user_email}")
             return False
 
         subject = "[G-Match] 새로운 룸메이트 후보가 매칭되었습니다!"
@@ -58,6 +68,7 @@ class EmailNotifier:
         )
 
         if async_send:
+            logger.info(f"[NOTIFY_ASYNC] Dispatching matched email to thread: to={user_email}")
             thread = threading.Thread(
                 target=self._send_email,
                 args=(user_email, subject, html_body, text_body)
@@ -75,6 +86,14 @@ class EmailNotifier:
         text_body: str
     ) -> bool:
         """SMTP를 통해 이메일 발송"""
+        logger.info(f"[SMTP_SEND_START] to={recipient}, subject={subject}")
+        logger.debug(
+            f"[SMTP_CONFIG] host={SMTP_HOST}, port={SMTP_PORT}, "
+            f"use_tls={SMTP_USE_TLS}, "
+            f"username={SMTP_USERNAME or '(empty)'}, "
+            f"password={'***' if SMTP_PASSWORD else '(empty)'}, "
+            f"from={DEFAULT_FROM_EMAIL}"
+        )
         try:
             # 멀티파트 메시지 생성
             msg = MIMEMultipart('alternative')
@@ -87,28 +106,69 @@ class EmailNotifier:
             part2 = MIMEText(html_body, 'html', 'utf-8')
             msg.attach(part1)
             msg.attach(part2)
+            logger.debug(f"[SMTP_MSG_BUILT] text_len={len(text_body)}, html_len={len(html_body)}")
 
             # SMTP 연결 및 발송
+            logger.debug(f"[SMTP_CONNECT] Connecting to {SMTP_HOST}:{SMTP_PORT} (TLS={SMTP_USE_TLS})")
+            server = smtplib.SMTP(SMTP_HOST, SMTP_PORT, timeout=10)
+
             if SMTP_USE_TLS:
-                server = smtplib.SMTP(SMTP_HOST, SMTP_PORT, timeout=10)
+                logger.debug("[SMTP_STARTTLS] Initiating STARTTLS")
                 server.starttls()
-            else:
-                server = smtplib.SMTP(SMTP_HOST, SMTP_PORT, timeout=10)
+                logger.debug("[SMTP_STARTTLS_OK] STARTTLS completed")
 
             if SMTP_USERNAME and SMTP_PASSWORD:
+                logger.debug(f"[SMTP_LOGIN] Authenticating as {SMTP_USERNAME}")
                 server.login(SMTP_USERNAME, SMTP_PASSWORD)
+                logger.debug("[SMTP_LOGIN_OK] Authentication successful")
+            else:
+                logger.debug("[SMTP_LOGIN_SKIP] No credentials provided, skipping auth")
 
+            logger.debug(f"[SMTP_SENDMAIL] Sending from={DEFAULT_FROM_EMAIL} to={recipient}")
             server.sendmail(DEFAULT_FROM_EMAIL, [recipient], msg.as_string())
             server.quit()
 
-            logger.info(f"Email sent to {recipient}")
+            logger.info(f"[SMTP_SEND_OK] Email sent to {recipient}")
             return True
 
+        except smtplib.SMTPAuthenticationError as e:
+            logger.error(
+                f"[SMTP_AUTH_FAIL] Authentication failed for {SMTP_USERNAME}, "
+                f"code={e.smtp_code}, msg={e.smtp_error}\n"
+                f"{traceback.format_exc()}"
+            )
+            return False
+        except smtplib.SMTPConnectError as e:
+            logger.error(
+                f"[SMTP_CONNECT_FAIL] Cannot connect to {SMTP_HOST}:{SMTP_PORT}, "
+                f"error={e}\n{traceback.format_exc()}"
+            )
+            return False
         except smtplib.SMTPException as e:
-            logger.error(f"SMTP error sending email to {recipient}: {e}")
+            logger.error(
+                f"[SMTP_ERROR] to={recipient}, "
+                f"error_type={type(e).__name__}, error={e}\n"
+                f"{traceback.format_exc()}"
+            )
+            return False
+        except ConnectionRefusedError as e:
+            logger.error(
+                f"[SMTP_REFUSED] Connection refused by {SMTP_HOST}:{SMTP_PORT}, "
+                f"error={e}\n{traceback.format_exc()}"
+            )
+            return False
+        except TimeoutError as e:
+            logger.error(
+                f"[SMTP_TIMEOUT] Connection timed out to {SMTP_HOST}:{SMTP_PORT}, "
+                f"error={e}\n{traceback.format_exc()}"
+            )
             return False
         except Exception as e:
-            logger.error(f"Unexpected error sending email to {recipient}: {e}")
+            logger.error(
+                f"[SMTP_UNEXPECTED] to={recipient}, "
+                f"error_type={type(e).__name__}, error={e}\n"
+                f"{traceback.format_exc()}"
+            )
             return False
 
     def _generate_matched_html(
@@ -206,8 +266,12 @@ G-Match에서 회원님과 잘 맞을 것 같은 룸메이트 후보를 찾았�
         async_send: bool = True
     ) -> bool:
         """매칭 대기 만료 알림 발송"""
+        logger.info(
+            f"[NOTIFY_EXPIRED] to={user_email}, user={user_name}, async={async_send}"
+        )
+
         if not self.enabled:
-            logger.debug(f"Email disabled, skipping expired notification to {user_email}")
+            logger.warning(f"[NOTIFY_SKIP] Email disabled, skipping expired notification to {user_email}")
             return False
 
         subject = "[G-Match] 매칭 대기가 만료되었습니다"
@@ -217,6 +281,7 @@ G-Match에서 회원님과 잘 맞을 것 같은 룸메이트 후보를 찾았�
         text_body = self._generate_expired_text(user_name, match_url)
 
         if async_send:
+            logger.info(f"[NOTIFY_ASYNC] Dispatching expired email to thread: to={user_email}")
             thread = threading.Thread(
                 target=self._send_email,
                 args=(user_email, subject, html_body, text_body)

@@ -4,6 +4,7 @@ EmailService: 매칭 상태 변경 시 이메일 알림 발송
 - 비동기 발송 지원 (thread 기반)
 """
 import logging
+import traceback
 import threading
 from django.conf import settings
 from django.core.mail import send_mail
@@ -13,7 +14,7 @@ from django.utils.html import strip_tags
 from account.models import CustomUser
 from .models import Property
 
-logger = logging.getLogger(__name__)
+logger = logging.getLogger('email.match_service')
 
 
 class MatchEmailService:
@@ -52,9 +53,10 @@ class MatchEmailService:
         """사용자 이메일 조회"""
         try:
             user = CustomUser.objects.get(user_id=user_id)
+            logger.debug(f"[USER_LOOKUP] user_id={user_id}, email={user.email}")
             return user.email
         except CustomUser.DoesNotExist:
-            logger.warning(f"User not found: {user_id}")
+            logger.warning(f"[USER_LOOKUP_FAIL] User not found: {user_id}")
             return None
 
     @staticmethod
@@ -62,8 +64,11 @@ class MatchEmailService:
         """사용자 이름 조회"""
         try:
             user = CustomUser.objects.get(user_id=user_id)
-            return user.nickname or user.name or '사용자'
+            name = user.nickname or user.name or '사용자'
+            logger.debug(f"[USER_LOOKUP] user_id={user_id}, name={name}")
+            return name
         except CustomUser.DoesNotExist:
+            logger.debug(f"[USER_LOOKUP_FAIL] user_id={user_id}, using default name")
             return '사용자'
 
     @classmethod
@@ -86,12 +91,15 @@ class MatchEmailService:
         Returns:
             발송 성공 여부
         """
+        logger.info(f"[NOTIFY_START] event={event}, user_id={user_id}, async={async_send}")
+
         if event not in cls.NOTIFICATION_EVENTS:
-            logger.error(f"Unknown notification event: {event}")
+            logger.error(f"[NOTIFY_FAIL] Unknown notification event: {event}")
             return False
 
         email = cls.get_user_email(user_id)
         if not email:
+            logger.error(f"[NOTIFY_FAIL] No email found for user_id={user_id}")
             return False
 
         event_config = cls.NOTIFICATION_EVENTS[event]
@@ -105,7 +113,17 @@ class MatchEmailService:
             **(context or {})
         }
 
+        logger.debug(
+            f"[SMTP_CONFIG] backend={settings.EMAIL_BACKEND}, "
+            f"host={settings.EMAIL_HOST}, port={settings.EMAIL_PORT}, "
+            f"use_tls={settings.EMAIL_USE_TLS}, use_ssl={settings.EMAIL_USE_SSL}, "
+            f"user={settings.EMAIL_HOST_USER or '(empty)'}, "
+            f"password={'***' if settings.EMAIL_HOST_PASSWORD else '(empty)'}, "
+            f"from={settings.DEFAULT_FROM_EMAIL}"
+        )
+
         if async_send:
+            logger.info(f"[NOTIFY_ASYNC] Dispatching to thread: event={event}, to={email}")
             thread = threading.Thread(
                 target=cls._send_email,
                 args=(email, event_config['subject'], event, template_context)
@@ -126,20 +144,29 @@ class MatchEmailService:
         context: dict
     ) -> bool:
         """실제 이메일 발송 (동기)"""
+        logger.info(f"[EMAIL_SEND_START] event={event}, to={recipient}, subject={subject}")
         try:
             # HTML 템플릿 렌더링 시도, 실패 시 기본 텍스트 사용
+            template_name = cls.NOTIFICATION_EVENTS[event]['template']
             try:
-                html_message = render_to_string(
-                    cls.NOTIFICATION_EVENTS[event]['template'],
-                    context
-                )
+                logger.debug(f"[TEMPLATE_RENDER] template={template_name}")
+                html_message = render_to_string(template_name, context)
                 plain_message = strip_tags(html_message)
+                logger.debug(f"[TEMPLATE_RENDER_OK] html_len={len(html_message)}, plain_len={len(plain_message)}")
             except Exception as template_error:
-                logger.warning(f"Template rendering failed: {template_error}")
+                logger.warning(
+                    f"[TEMPLATE_RENDER_FAIL] template={template_name}, "
+                    f"error_type={type(template_error).__name__}, error={template_error}"
+                )
                 # 기본 텍스트 메시지 사용
                 html_message, plain_message = cls._get_fallback_message(event, context)
+                logger.debug(f"[FALLBACK_MSG] Using fallback message for event={event}")
 
-            send_mail(
+            logger.debug(
+                f"[SMTP_SENDING] from={settings.DEFAULT_FROM_EMAIL}, to={recipient}, "
+                f"backend={settings.EMAIL_BACKEND}"
+            )
+            result = send_mail(
                 subject=subject,
                 message=plain_message,
                 from_email=settings.DEFAULT_FROM_EMAIL,
@@ -148,11 +175,15 @@ class MatchEmailService:
                 fail_silently=False,
             )
 
-            logger.info(f"Email sent successfully: {event} -> {recipient}")
+            logger.info(f"[EMAIL_SEND_OK] event={event}, to={recipient}, result={result}")
             return True
 
         except Exception as e:
-            logger.error(f"Failed to send email: {event} -> {recipient}, error: {e}")
+            logger.error(
+                f"[EMAIL_SEND_FAIL] event={event}, to={recipient}, "
+                f"error_type={type(e).__name__}, error={e}\n"
+                f"{traceback.format_exc()}"
+            )
             return False
 
     @staticmethod

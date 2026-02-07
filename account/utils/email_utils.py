@@ -1,5 +1,10 @@
+import logging
+import traceback
+
 from django.core.mail import send_mail
 from django.conf import settings
+
+logger = logging.getLogger('email.verification')
 
 
 def send_verification_email(email, code):
@@ -28,15 +33,30 @@ def send_verification_email(email, code):
 G-Match 팀
     """
 
+    logger.info(f"[EMAIL_SEND_START] Verification email to={email}")
+    logger.debug(
+        f"[SMTP_CONFIG] backend={settings.EMAIL_BACKEND}, "
+        f"host={settings.EMAIL_HOST}, port={settings.EMAIL_PORT}, "
+        f"use_tls={settings.EMAIL_USE_TLS}, use_ssl={settings.EMAIL_USE_SSL}, "
+        f"user={settings.EMAIL_HOST_USER or '(empty)'}, "
+        f"password={'***' if settings.EMAIL_HOST_PASSWORD else '(empty)'}, "
+        f"from={settings.DEFAULT_FROM_EMAIL}, timeout={settings.EMAIL_TIMEOUT}"
+    )
+
     try:
-        send_mail(
+        result = send_mail(
             subject=subject,
             message=message,
             from_email=settings.DEFAULT_FROM_EMAIL,
             recipient_list=[email],
             fail_silently=False,
         )
+        logger.info(f"[EMAIL_SEND_OK] Verification email sent to={email}, result={result}")
         return True
     except Exception as e:
-        print(f"Email send failed: {str(e)}")
+        logger.error(
+            f"[EMAIL_SEND_FAIL] Verification email to={email}, "
+            f"error_type={type(e).__name__}, error={e}\n"
+            f"{traceback.format_exc()}"
+        )
         return False

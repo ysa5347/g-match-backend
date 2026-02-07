@@ -1,4 +1,11 @@
 import os
+import logging
+
+# Matcher 프로세스 로깅 설정
+logging.basicConfig(
+    level=logging.DEBUG,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
 
 # Redis 설정
 REDIS_HOST = os.getenv('REDIS_HOST', 'localhost')

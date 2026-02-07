@@ -19,10 +19,7 @@ from config import (
     EDGE_PREFIX
 )
 
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-)
+# logging.basicConfig은 config.py에서 설정됨 (DEBUG level)
 logger = logging.getLogger('edge_calculator')
 
 SOFT_SCORE_MAX = 20
