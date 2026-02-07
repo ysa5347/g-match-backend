@@ -18,8 +18,8 @@ class PropertySerializer(serializers.ModelSerializer):
 
     def validate_stay_period(self, value):
         """입주 기간 검증"""
-        if value not in [1, 2, 3]:
-            raise serializers.ValidationError("최소 입주 기간은 1학기에서 3학기 사이여야 합니다.")
+        if value not in [1, 2, 3, 4]:
+            raise serializers.ValidationError("최소 입주 기간은 1학기에서 4학기 사이여야 합니다.")
         return value
 
 class ProfilePropertySerializer(serializers.ModelSerializer):
