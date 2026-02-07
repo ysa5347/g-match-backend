@@ -51,7 +51,12 @@ class RedisQueueService:
 
 class MatchHistoryService:
     @staticmethod
-    def get_by_status(user_id: int, match_status: int) -> MatchHistory | None:
+    def _is_user_a(match_history: MatchHistory, user_id) -> bool:
+        """UUID 비교를 위해 문자열로 변환하여 비교"""
+        return str(match_history.user_a_id) == str(user_id)
+
+    @staticmethod
+    def get_by_status(user_id, match_status: int) -> MatchHistory | None:
         status_to_result = {
             Property.MatchStatusChoice.MATCHED: MatchHistory.ResultStatus.PENDING,
             Property.MatchStatusChoice.MY_APPROVED: MatchHistory.ResultStatus.PENDING,
@@ -70,28 +75,28 @@ class MatchHistoryService:
         ).order_by('-matched_at').first()
 
     @staticmethod
-    def get_partner_id(match_history: MatchHistory, my_id: int) -> int:
-        if match_history.user_a_id == my_id:
+    def get_partner_id(match_history: MatchHistory, my_id):
+        if MatchHistoryService._is_user_a(match_history, my_id):
             return match_history.user_b_id
         return match_history.user_a_id
 
     @staticmethod
-    def get_partner_profile_ids(match_history: MatchHistory, my_id: int) -> tuple[int, int]:
-        if match_history.user_a_id == my_id:
+    def get_partner_profile_ids(match_history: MatchHistory, my_id) -> tuple[int, int]:
+        if MatchHistoryService._is_user_a(match_history, my_id):
             return match_history.prop_b_id, match_history.surv_b_id
         return match_history.prop_a_id, match_history.surv_a_id
 
     @staticmethod
-    def update_my_approval(match_history: MatchHistory, my_id: int, approval_status: int):
-        if match_history.user_a_id == my_id:
+    def update_my_approval(match_history: MatchHistory, my_id, approval_status: int):
+        if MatchHistoryService._is_user_a(match_history, my_id):
             match_history.a_approval = approval_status
         else:
             match_history.b_approval = approval_status
         match_history.save()
 
     @staticmethod
-    def get_partner_approval(match_history: MatchHistory, my_id: int) -> int:
-        if match_history.user_a_id == my_id:
+    def get_partner_approval(match_history: MatchHistory, my_id) -> int:
+        if MatchHistoryService._is_user_a(match_history, my_id):
             return match_history.b_approval
         return match_history.a_approval
 
@@ -227,8 +232,9 @@ class MatchingService:
             prop_a = Property.objects.select_for_update().filter(user_id=user_a_id).last()
             prop_b = Property.objects.select_for_update().filter(user_id=user_b_id).last()
 
-            my_prop = prop_a if user_id == user_a_id else prop_b
-            partner_prop = prop_b if user_id == user_a_id else prop_a
+            is_user_a = str(user_id) == str(user_a_id)
+            my_prop = prop_a if is_user_a else prop_b
+            partner_prop = prop_b if is_user_a else prop_a
 
             if not my_prop or not partner_prop:
                 return {
@@ -354,8 +360,9 @@ class MatchingService:
             prop_a = Property.objects.select_for_update().filter(user_id=user_a_id).last()
             prop_b = Property.objects.select_for_update().filter(user_id=user_b_id).last()
 
-            my_prop = prop_a if user_id == user_a_id else prop_b
-            partner_prop = prop_b if user_id == user_a_id else prop_a
+            is_user_a = str(user_id) == str(user_a_id)
+            my_prop = prop_a if is_user_a else prop_b
+            partner_prop = prop_b if is_user_a else prop_a
 
             if not my_prop or not partner_prop:
                 return {
@@ -525,8 +532,9 @@ class MatchingService:
             prop_a = Property.objects.select_for_update().filter(user_id=user_a_id).last()
             prop_b = Property.objects.select_for_update().filter(user_id=user_b_id).last()
 
-            my_prop = prop_a if user_id == user_a_id else prop_b
-            partner_prop = prop_b if user_id == user_a_id else prop_a
+            is_user_a = str(user_id) == str(user_a_id)
+            my_prop = prop_a if is_user_a else prop_b
+            partner_prop = prop_b if is_user_a else prop_a
 
             if not my_prop:
                 return {
