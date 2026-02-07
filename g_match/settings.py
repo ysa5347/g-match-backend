@@ -225,17 +225,18 @@ REST_FRAMEWORK = {
     ],
 }
 
-# Email Settings (AWS SES for GIST email verification)
-EMAIL_BACKEND = 'django_ses.SESBackend'
-
-# AWS Credentials
-AWS_ACCESS_KEY_ID = os.getenv('AWS_ACCESS_KEY_ID')
-AWS_SECRET_ACCESS_KEY = os.getenv('AWS_SECRET_ACCESS_KEY')
-AWS_SES_REGION_NAME = os.getenv('AWS_SES_REGION_NAME', 'ap-northeast-2')
-AWS_SES_REGION_ENDPOINT = f'email.{AWS_SES_REGION_NAME}.amazonaws.com'
+# Email Settings (SMTP)
+EMAIL_BACKEND = 'django.core.mail.backends.smtp.EmailBackend'
+EMAIL_HOST = os.getenv('SMTP_HOST', 'localhost')
+EMAIL_PORT = int(os.getenv('SMTP_PORT', '587'))
+EMAIL_USE_TLS = os.getenv('SMTP_USE_TLS', 'false').lower() in ('true', '1', 'yes')
+EMAIL_USE_SSL = os.getenv('SMTP_USE_SSL', 'false').lower() in ('true', '1', 'yes')
+EMAIL_HOST_USER = os.getenv('SMTP_USERNAME', '')
+EMAIL_HOST_PASSWORD = os.getenv('SMTP_PASSWORD', '')
+EMAIL_TIMEOUT = int(os.getenv('SMTP_TIMEOUT', '10'))
 
 # Email configuration
-DEFAULT_FROM_EMAIL = os.getenv('DEFAULT_FROM_EMAIL', 'noreply@g-match.com')
+DEFAULT_FROM_EMAIL = os.getenv('DEFAULT_FROM_EMAIL', 'noreply@g-match.org')
 SERVER_EMAIL = DEFAULT_FROM_EMAIL
 
 # Development: use console backend for testing
