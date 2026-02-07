@@ -175,6 +175,7 @@ def build_authorization_url(redirect_after=None):
         'scope': ' '.join(settings.GIST_OIDC['SCOPES']),
         'state': state,
         'nonce': nonce,
+        'prompt': 'consent',  # 항상 동의 화면 표시 (모바일 redirect loop 방지)
         # PKCE 파라미터
         'code_challenge': code_challenge,
         'code_challenge_method': 'S256',
