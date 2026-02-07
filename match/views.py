@@ -33,9 +33,9 @@ class ProfileViewSet(viewsets.ViewSet):
 
     def list(self, request):
         user = request.user
-        property_obj = Property.objects.filter(user_id=user.user_id).last()
+        property_obj = Property.objects.filter(user_id=user.user_id).first()
         print(property_obj.property_id)
-        survey_obj = Survey.objects.filter(user_id=user.user_id).last()
+        survey_obj = Survey.objects.filter(user_id=user.user_id).first()
 
         if not property_obj:
             return Response({
@@ -66,7 +66,7 @@ class ProfileViewSet(viewsets.ViewSet):
         if request.method == 'GET':
             # checkpoint
             # print(user)
-            property_obj = Property.objects.filter(user_id=user.user_id).last()
+            property_obj = Property.objects.filter(user_id=user.user_id).first()
             if property_obj:
                 return Response({
                     "success": True,
@@ -80,7 +80,7 @@ class ProfileViewSet(viewsets.ViewSet):
 
         if request.method == 'POST':
             # 매칭 진행 중이면 프로필 수정 불가
-            existing_property = Property.objects.filter(user_id=user.user_id).last()
+            existing_property = Property.objects.filter(user_id=user.user_id).first()
             if existing_property and existing_property.match_status != Property.MatchStatusChoice.NOT_STARTED:
                 return Response({
                     "success": False,
@@ -114,7 +114,7 @@ class ProfileViewSet(viewsets.ViewSet):
         user = request.user
 
         if request.method == 'GET':
-            survey_obj = Survey.objects.filter(user_id=user.user_id).last()
+            survey_obj = Survey.objects.filter(user_id=user.user_id).first()
             if survey_obj:
                 return Response({
                     "success": True,
@@ -128,7 +128,7 @@ class ProfileViewSet(viewsets.ViewSet):
 
         if request.method == 'POST':
             # 매칭 진행 중이면 프로필 수정 불가
-            existing_property = Property.objects.filter(user_id=user.user_id).last()
+            existing_property = Property.objects.filter(user_id=user.user_id).first()
             if existing_property and existing_property.match_status != Property.MatchStatusChoice.NOT_STARTED:
                 return Response({
                     "success": False,
