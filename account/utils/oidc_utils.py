@@ -161,11 +161,18 @@ def build_authorization_url(redirect_after=None):
     state = generate_state()
     nonce = generate_nonce()
 
-    # PKCE: code_verifier 및 code_challenge 생성
-    code_verifier = generate_code_verifier()
-    code_challenge = generate_code_challenge(code_verifier)
+    # PKCE 사용 여부 확인
+    use_pkce = settings.GIST_OIDC.get('USE_PKCE', True)
 
-    # State 저장 (code_verifier 포함)
+    if use_pkce:
+        # PKCE: code_verifier 및 code_challenge 생성
+        code_verifier = generate_code_verifier()
+        code_challenge = generate_code_challenge(code_verifier)
+    else:
+        code_verifier = None
+        code_challenge = None
+
+    # State 저장 (code_verifier 포함, PKCE 비활성화 시 None)
     store_oidc_state(state, nonce, code_verifier, redirect_after)
 
     params = {
@@ -175,10 +182,12 @@ def build_authorization_url(redirect_after=None):
         'scope': ' '.join(settings.GIST_OIDC['SCOPES']),
         'state': state,
         'nonce': nonce,
-        # PKCE 파라미터
-        'code_challenge': code_challenge,
-        'code_challenge_method': 'S256',
     }
+
+    # PKCE 파라미터 추가 (활성화된 경우에만)
+    if use_pkce and code_challenge:
+        params['code_challenge'] = code_challenge
+        params['code_challenge_method'] = 'S256'
 
     authorization_url = f"{settings.GIST_OIDC['AUTHORIZATION_ENDPOINT']}?{urlencode(params)}"
 
@@ -223,9 +232,11 @@ def exchange_code_for_tokens(code, code_verifier):
         'redirect_uri': settings.GIST_OIDC['REDIRECT_URI'],
         'client_id': settings.GIST_OIDC['CLIENT_ID'],
         'client_secret': settings.GIST_OIDC['CLIENT_SECRET'],
-        # PKCE: code_verifier 전송
-        'code_verifier': code_verifier,
     }
+
+    # PKCE: code_verifier 전송 (활성화된 경우에만)
+    if code_verifier:
+        data['code_verifier'] = code_verifier
 
     logger.info(f"[OIDC] Token exchange - endpoint: {token_endpoint}")
     logger.info(f"[OIDC] Token exchange - redirect_uri: {data['redirect_uri']}")
