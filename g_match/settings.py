@@ -182,9 +182,7 @@ if CSRF_ENABLED:
         'https://www.g-match.org',
     ]
     CSRF_COOKIE_HTTPONLY = False  # F/E(axios)가 쿠키를 읽을 수 있어야 함
-    # iOS Safari ITP 대응
-    CSRF_COOKIE_SAMESITE = 'None'
-    CSRF_COOKIE_SECURE = True
+    CSRF_COOKIE_SAMESITE = 'Lax'
 
 # Session Settings
 # SESSION_ENGINE = 'django.contrib.sessions.backends.db'
@@ -193,10 +191,7 @@ SESSION_CACHE_ALIAS = 'default'
 SESSION_COOKIE_NAME = 'sessionid'
 SESSION_COOKIE_AGE = 1209600  # 2 weeks
 SESSION_COOKIE_HTTPONLY = True
-# iOS Safari ITP 대응: cross-site OIDC redirect 시 세션 유지를 위해 SameSite=None 필요
-# SameSite=None은 반드시 Secure=True와 함께 사용해야 함
-SESSION_COOKIE_SAMESITE = 'None'
-SESSION_COOKIE_SECURE = True
+SESSION_COOKIE_SAMESITE = 'Lax'
 
 # Redis Cache Settings
 REDIS_HOST = os.getenv('REDIS_HOST', '127.0.0.1')
@@ -287,10 +282,6 @@ GIST_OIDC = {
     # Session Settings
     'STATE_TTL': 600,  # 10 minutes for state parameter validity
     'NONCE_TTL': 600,  # 10 minutes for nonce validity
-
-    # PKCE Settings
-    # 일부 IdP는 모바일 환경에서 PKCE 처리에 문제가 있을 수 있음
-    'USE_PKCE': os.getenv('GIST_OIDC_USE_PKCE', 'True').lower() in ('true', '1', 'yes'),
 
     # Claim Mapping (from claims_supported)
     # IdP claims: sub, profile, email, phone_number, student_id
