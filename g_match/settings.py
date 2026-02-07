@@ -299,6 +299,10 @@ GIST_OIDC = {
 FRONTEND_URL = os.getenv('FRONTEND_URL', 'http://localhost:8080')
 FRONTEND_AUTH_CALLBACK_URL = os.getenv('FRONTEND_AUTH_CALLBACK_URL', f'{FRONTEND_URL}/auth/callback')
 
+# Terms & Privacy Policy URLs (S3 hosted markdown files)
+TERMS_OF_SERVICE_URL = os.getenv('TERMS_OF_SERVICE_URL', '')
+PRIVACY_POLICY_URL = os.getenv('PRIVACY_POLICY_URL', '')
+
 # Logging Configuration
 LOGGING = {
     'version': 1,

@@ -1,3 +1,4 @@
+from django.conf import settings as django_settings
 from django.http import JsonResponse
 from django.views.decorators.http import require_http_methods
 from django.shortcuts import redirect
@@ -296,16 +297,16 @@ def registration_agree_view(request):
     GET/POST /api/v1alpha1/account/auth/registration/agree
     """
     if request.method == 'GET':
-        # 약관 내용 반환
+        # 약관 URL 반환 (S3 hosted markdown files)
         return Response({
             'success': True,
             'terms_of_service': {
                 'title': '서비스 이용약관',
-                'content': '서비스 이용약관 내용...'
+                'url': django_settings.TERMS_OF_SERVICE_URL,
             },
             'privacy_policy': {
                 'title': '개인정보 처리방침',
-                'content': '개인정보 처리방침 내용...'
+                'url': django_settings.PRIVACY_POLICY_URL,
             }
         }, status=status.HTTP_200_OK)
 
