@@ -1,0 +1,24 @@
+{% extends "match/email/base.html" %}
+
+{% block title %}매칭 대기가 만료되었습니다 - G-Match{% endblock %}
+
+{% block content %}
+<h1>매칭 대기 만료 안내</h1>
+
+<p>안녕하세요, <span class="highlight">{{ user_name }}</span>님.</p>
+
+<p>매칭 대기 시간(24시간)이 만료되어 대기열에서 제외되었습니다.</p>
+
+<div class="info-box">
+    <p>아쉽게도 대기 시간 내에 적합한 룸메이트를 찾지 못했습니다.</p>
+    <p>새로운 룸메이트를 찾으시려면 다시 매칭을 시작해주세요.</p>
+</div>
+
+<div style="text-align: center;">
+    <a href="{{ match_url }}" class="cta-button">다시 매칭 시작하기</a>
+</div>
+
+<p style="font-size: 14px; color: #6b7280;">
+    더 좋은 룸메이트를 만나실 수 있도록 G-Match가 도와드리겠습니다.
+</p>
+{% endblock %}

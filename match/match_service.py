@@ -3,9 +3,10 @@ MatchingService: 매칭 관련 비즈니스 로직
 - Redis 대기열 관리
 - MatchHistory 조회/업데이트
 - 상태 전이 로직
-    - ACCOUNT 완료시 연락처 조회 로직 연동 필요
+- 이메일 알림 발송
 """
 import json
+import logging
 import redis
 from django.utils import timezone
 from django.db import transaction
@@ -13,6 +14,9 @@ from django.db.models import Q
 
 from account.models import CustomUser
 from .models import Property, Survey, MatchHistory
+from .email_service import MatchEmailService
+
+logger = logging.getLogger(__name__)
 
 
 class RedisQueueService:
@@ -51,7 +55,12 @@ class RedisQueueService:
 
 class MatchHistoryService:
     @staticmethod
-    def get_by_status(user_id: int, match_status: int) -> MatchHistory | None:
+    def _is_user_a(match_history: MatchHistory, user_id) -> bool:
+        """UUID 비교를 위해 문자열로 변환하여 비교"""
+        return str(match_history.user_a_id) == str(user_id)
+
+    @staticmethod
+    def get_by_status(user_id, match_status: int) -> MatchHistory | None:
         status_to_result = {
             Property.MatchStatusChoice.MATCHED: MatchHistory.ResultStatus.PENDING,
             Property.MatchStatusChoice.MY_APPROVED: MatchHistory.ResultStatus.PENDING,
@@ -70,28 +79,28 @@ class MatchHistoryService:
         ).order_by('-matched_at').first()
 
     @staticmethod
-    def get_partner_id(match_history: MatchHistory, my_id: int) -> int:
-        if match_history.user_a_id == my_id:
+    def get_partner_id(match_history: MatchHistory, my_id):
+        if MatchHistoryService._is_user_a(match_history, my_id):
             return match_history.user_b_id
         return match_history.user_a_id
 
     @staticmethod
-    def get_partner_profile_ids(match_history: MatchHistory, my_id: int) -> tuple[int, int]:
-        if match_history.user_a_id == my_id:
+    def get_partner_profile_ids(match_history: MatchHistory, my_id) -> tuple[int, int]:
+        if MatchHistoryService._is_user_a(match_history, my_id):
             return match_history.prop_b_id, match_history.surv_b_id
         return match_history.prop_a_id, match_history.surv_a_id
 
     @staticmethod
-    def update_my_approval(match_history: MatchHistory, my_id: int, approval_status: int):
-        if match_history.user_a_id == my_id:
+    def update_my_approval(match_history: MatchHistory, my_id, approval_status: int):
+        if MatchHistoryService._is_user_a(match_history, my_id):
             match_history.a_approval = approval_status
         else:
             match_history.b_approval = approval_status
         match_history.save()
 
     @staticmethod
-    def get_partner_approval(match_history: MatchHistory, my_id: int) -> int:
-        if match_history.user_a_id == my_id:
+    def get_partner_approval(match_history: MatchHistory, my_id) -> int:
+        if MatchHistoryService._is_user_a(match_history, my_id):
             return match_history.b_approval
         return match_history.a_approval
 
@@ -227,8 +236,9 @@ class MatchingService:
             prop_a = Property.objects.select_for_update().filter(user_id=user_a_id).last()
             prop_b = Property.objects.select_for_update().filter(user_id=user_b_id).last()
 
-            my_prop = prop_a if user_id == user_a_id else prop_b
-            partner_prop = prop_b if user_id == user_a_id else prop_a
+            is_user_a = str(user_id) == str(user_a_id)
+            my_prop = prop_a if is_user_a else prop_b
+            partner_prop = prop_b if is_user_a else prop_a
 
             if not my_prop or not partner_prop:
                 return {
@@ -254,12 +264,16 @@ class MatchingService:
             match_history.save()
 
             # 상대방 status를 PARTNER_REJECTED(5)로
+            partner_id = user_b_id if is_user_a else user_a_id
             if partner_prop.match_status in [
                 Property.MatchStatusChoice.MATCHED,
                 Property.MatchStatusChoice.MY_APPROVED
             ]:
                 partner_prop.match_status = Property.MatchStatusChoice.PARTNER_REJECTED
                 partner_prop.save()
+
+                # 상대방에게 거절 알림 이메일 발송
+                MatchEmailService.notify_partner_rejected(partner_id)
 
             # 내 상태 초기화
             my_prop.match_status = Property.MatchStatusChoice.NOT_STARTED
@@ -354,8 +368,9 @@ class MatchingService:
             prop_a = Property.objects.select_for_update().filter(user_id=user_a_id).last()
             prop_b = Property.objects.select_for_update().filter(user_id=user_b_id).last()
 
-            my_prop = prop_a if user_id == user_a_id else prop_b
-            partner_prop = prop_b if user_id == user_a_id else prop_a
+            is_user_a = str(user_id) == str(user_a_id)
+            my_prop = prop_a if is_user_a else prop_b
+            partner_prop = prop_b if is_user_a else prop_a
 
             if not my_prop or not partner_prop:
                 return {
@@ -377,9 +392,11 @@ class MatchingService:
                 match_history, user_id, MatchHistory.ApprovalChoice.APPROVED
             )
             partner_approval = self.history_service.get_partner_approval(match_history, user_id)
+            partner_id = user_b_id if is_user_a else user_a_id
 
             # property에 반영
             if partner_approval == MatchHistory.ApprovalChoice.APPROVED:
+                # 양쪽 모두 수락 → 매칭 성사
                 my_prop.match_status = Property.MatchStatusChoice.BOTH_APPROVED
                 if partner_prop:
                     partner_prop.match_status = Property.MatchStatusChoice.BOTH_APPROVED
@@ -387,8 +404,16 @@ class MatchingService:
 
                 match_history.final_match_status = MatchHistory.ResultStatus.SUCCESS
                 match_history.save()
+
+                # 양쪽에게 매칭 성사 알림 이메일 발송
+                MatchEmailService.notify_both_approved(user_id)
+                MatchEmailService.notify_both_approved(partner_id)
             else:
+                # 나만 수락 → 상대방에게 알림
                 my_prop.match_status = Property.MatchStatusChoice.MY_APPROVED
+
+                # 상대방에게 내가 수락했다는 알림 이메일 발송
+                MatchEmailService.notify_partner_approved(partner_id)
 
             my_prop.save()
 
@@ -525,8 +550,9 @@ class MatchingService:
             prop_a = Property.objects.select_for_update().filter(user_id=user_a_id).last()
             prop_b = Property.objects.select_for_update().filter(user_id=user_b_id).last()
 
-            my_prop = prop_a if user_id == user_a_id else prop_b
-            partner_prop = prop_b if user_id == user_a_id else prop_a
+            is_user_a = str(user_id) == str(user_a_id)
+            my_prop = prop_a if is_user_a else prop_b
+            partner_prop = prop_b if is_user_a else prop_a
 
             if not my_prop:
                 return {
@@ -545,9 +571,13 @@ class MatchingService:
                 }
 
             # 상대방 status를 PARTNER_REMATCHED(6)로
+            partner_id = user_b_id if is_user_a else user_a_id
             if partner_prop and partner_prop.match_status == Property.MatchStatusChoice.BOTH_APPROVED:
                 partner_prop.match_status = Property.MatchStatusChoice.PARTNER_REMATCHED
                 partner_prop.save()
+
+                # 상대방에게 재매칭 알림 이메일 발송
+                MatchEmailService.notify_partner_rematched(partner_id)
 
             # 내 상태 초기화
             my_prop.match_status = Property.MatchStatusChoice.NOT_STARTED

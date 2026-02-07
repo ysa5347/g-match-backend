@@ -1,0 +1,24 @@
+{% extends "match/email/base.html" %}
+
+{% block title %}상대방이 재매칭을 요청했습니다 - G-Match{% endblock %}
+
+{% block content %}
+<h1>매칭 상태 변경 안내</h1>
+
+<p>안녕하세요, <span class="highlight">{{ user_name }}</span>님.</p>
+
+<p>매칭이 성사된 상대방이 <strong>재매칭을 요청</strong>했습니다.</p>
+
+<div class="info-box">
+    <p>상대방이 다른 룸메이트를 찾기로 결정했습니다.</p>
+    <p>회원님도 새로운 룸메이트를 찾으시려면 재매칭을 요청해주세요.</p>
+</div>
+
+<div style="text-align: center;">
+    <a href="{{ match_url }}" class="cta-button">재매칭 요청하기</a>
+</div>
+
+<p style="font-size: 14px; color: #6b7280;">
+    더 좋은 룸메이트를 만나실 수 있도록 G-Match가 도와드리겠습니다.
+</p>
+{% endblock %}

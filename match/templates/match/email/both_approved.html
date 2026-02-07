@@ -1,0 +1,29 @@
+{% extends "match/email/base.html" %}
+
+{% block title %}매칭이 성사되었습니다! - G-Match{% endblock %}
+
+{% block content %}
+<h1 style="text-align: center;">매칭 성사를 축하드립니다! 🎉</h1>
+
+<p>안녕하세요, <span class="highlight">{{ user_name }}</span>님!</p>
+
+<p>축하합니다! 양쪽 모두 매칭을 수락하여 <strong>매칭이 성사</strong>되었습니다!</p>
+
+<div class="info-box" style="background-color: #ecfdf5; border: 1px solid #10b981;">
+    <p style="color: #047857; text-align: center; font-size: 16px;">
+        <strong>이제 상대방의 연락처를 확인할 수 있습니다.</strong>
+    </p>
+</div>
+
+<p>G-Match에서 상대방의 연락처를 확인하고 직접 연락해보세요.</p>
+<p>서로 일정을 조율하여 만나보시는 것을 추천드립니다!</p>
+
+<div style="text-align: center;">
+    <a href="{{ match_url }}" class="cta-button">연락처 확인하기</a>
+</div>
+
+<p style="font-size: 14px; color: #6b7280;">
+    좋은 룸메이트를 찾으셨길 바랍니다.<br>
+    G-Match를 이용해주셔서 감사합니다!
+</p>
+{% endblock %}

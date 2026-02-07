@@ -24,17 +24,17 @@ g-match-backend/
 ## 핵심 차이점
 
 ### 프로덕션 빌드 (Dockerfile)
-- ✅ **tests/ 디렉토리 제외** (.dockerignore)
-- ✅ Multi-stage build (이미지 크기 최소화)
-- ✅ Non-root user 사용
-- ✅ Gunicorn WSGI 서버
-- ✅ Health check 포함
+- **tests/ 디렉토리 제외** (.dockerignore)
+- Multi-stage build (이미지 크기 최소화)
+- Non-root user 사용
+- Gunicorn WSGI 서버
+- Health check 포함
 
 ### 개발 빌드 (Dockerfile.dev)
-- ✅ **tests/ 디렉토리 포함**
-- ✅ Volume mount로 hot-reload
-- ✅ Django runserver
-- ✅ 개발 도구 포함 (coverage, ipdb 등)
+- **tests/ 디렉토리 포함**
+- Volume mount로 hot-reload
+- Django runserver
+- 개발 도구 포함 (coverage, ipdb 등)
 
 ---
 
