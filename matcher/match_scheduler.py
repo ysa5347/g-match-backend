@@ -175,6 +175,15 @@ def find_matching_pairs(edges: list[dict], users: dict[str, dict], threshold: fl
     return matched_pairs
 
 
+# == Helper: UUID 문자열을 MySQL UUIDField 형식(하이픈 없는 32자)으로 변환 ==
+def normalize_uuid(uuid_str: str) -> str:
+    """
+    Django의 UUIDField는 MySQL에서 CHAR(32)로 저장됨 (하이픈 없음).
+    Redis에서 읽은 UUID 문자열(36자, 하이픈 포함)을 32자로 변환.
+    """
+    return uuid.UUID(uuid_str).hex
+
+
 # == 5. MatchHistory 저장 + user-queue 삭제 + 이메일 알림 ==================
 def process_matched_pairs(r: redis.Redis, conn, matched_pairs: list[dict], users: dict[str, dict]) -> set[str]:
     """매칭된 쌍 처리: DB 저장 + user-queue 삭제 + 이메일 알림 (edge 정리는 다음 사이클에서)"""
@@ -191,6 +200,10 @@ def process_matched_pairs(r: redis.Redis, conn, matched_pairs: list[dict], users
             continue
 
         try:
+            # UUID를 MySQL UUIDField 형식(하이픈 없는 32자)으로 변환
+            uuid_a = normalize_uuid(user_a['user_id'])
+            uuid_b = normalize_uuid(user_b['user_id'])
+
             cursor.execute("""
                 INSERT INTO match_history (
                     matched_at, user_a_id, user_b_id,
@@ -198,7 +211,7 @@ def process_matched_pairs(r: redis.Redis, conn, matched_pairs: list[dict], users
                     compatibility_score, a_approval, b_approval, final_match_status
                 ) VALUES (NOW(), %s, %s, %s, %s, %s, %s, %s, 0, 0, 0)
             """, (
-                user_a['user_id'], user_b['user_id'],
+                uuid_a, uuid_b,
                 user_a['property_id'], user_b['property_id'],
                 user_a['survey_id'], user_b['survey_id'],
                 edge['score']
@@ -231,15 +244,20 @@ def process_matched_pairs(r: redis.Redis, conn, matched_pairs: list[dict], users
 def _send_match_notifications(conn, cursor, user_a: dict, user_b: dict, score: float, notifier):
     """매칭된 양쪽 사용자에게 이메일 알림 발송"""
     try:
+        # UUID를 MySQL 형식으로 변환
+        uuid_a = normalize_uuid(user_a['user_id'])
+        uuid_b = normalize_uuid(user_b['user_id'])
+
         # 사용자 정보 조회 (이메일, 닉네임)
         cursor.execute(
             "SELECT user_id, email, nickname, name FROM account_customuser WHERE user_id IN (%s, %s)",
-            (user_a['user_id'], user_b['user_id'])
+            (uuid_a, uuid_b)
         )
-        user_info = {str(row[0]): {'email': row[1], 'nickname': row[2], 'name': row[3]} for row in cursor.fetchall()}
+        # DB에서 반환되는 user_id도 32자 hex이므로 그대로 사용
+        user_info = {row[0]: {'email': row[1], 'nickname': row[2], 'name': row[3]} for row in cursor.fetchall()}
 
-        info_a = user_info.get(user_a['user_id'], {})
-        info_b = user_info.get(user_b['user_id'], {})
+        info_a = user_info.get(uuid_a, {})
+        info_b = user_info.get(uuid_b, {})
 
         # User A에게 알림
         if info_a.get('email'):
@@ -294,7 +312,8 @@ def remove_expired_users(r: redis.Redis, conn):
 
     if expired_users:
         expired_property_ids = [p[1] for p in expired_users]
-        expired_user_ids = [u[0] for u in expired_users]
+        # UUID를 MySQL 형식(32자 hex)으로 변환
+        expired_user_ids = [normalize_uuid(u[0]) for u in expired_users]
 
         cursor = conn.cursor()
         try:
