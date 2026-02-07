@@ -26,7 +26,7 @@ SMTP_PORT = int(os.getenv('SMTP_PORT', 587))
 SMTP_USERNAME = os.getenv('SMTP_USERNAME', '')
 SMTP_PASSWORD = os.getenv('SMTP_PASSWORD', '')
 SMTP_USE_TLS = os.getenv('SMTP_USE_TLS', 'false').lower() in ('true', '1', 'yes')
-DEFAULT_FROM_EMAIL = os.getenv('DEFAULT_FROM_EMAIL', 'noreply@g-match.org')
+DEFAULT_FROM_EMAIL = os.getenv('DEFAULT_FROM_EMAIL', 'no-reply@g-match.org')
 FRONTEND_URL = os.getenv('FRONTEND_URL', 'https://www.g-match.org')
 
 # 이메일 발송 활성화 여부 (개발 환경에서 비활성화)

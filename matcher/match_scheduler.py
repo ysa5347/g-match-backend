@@ -252,7 +252,7 @@ def _send_match_notifications(conn, cursor, user_a: dict, user_b: dict, score: f
 
         # 사용자 정보 조회 (이메일, 닉네임)
         cursor.execute(
-            "SELECT user_id, email, nickname, name FROM account_customuser WHERE user_id IN (%s, %s)",
+            "SELECT user_id, email, nickname, name FROM users WHERE user_id IN (%s, %s)",
             (uuid_a, uuid_b)
         )
         rows = cursor.fetchall()
@@ -364,7 +364,7 @@ def _send_expired_notifications(conn, cursor, expired_user_ids: list):
     try:
         placeholders = ','.join(['%s'] * len(expired_user_ids))
         cursor.execute(
-            f"SELECT user_id, email, nickname, name FROM account_customuser WHERE user_id IN ({placeholders})",
+            f"SELECT user_id, email, nickname, name FROM users WHERE user_id IN ({placeholders})",
             expired_user_ids
         )
         users = cursor.fetchall()

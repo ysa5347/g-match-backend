@@ -236,7 +236,7 @@ EMAIL_HOST_PASSWORD = os.getenv('SMTP_PASSWORD', '')
 EMAIL_TIMEOUT = int(os.getenv('SMTP_TIMEOUT', '10'))
 
 # Email configuration
-DEFAULT_FROM_EMAIL = os.getenv('DEFAULT_FROM_EMAIL', 'noreply@g-match.org')
+DEFAULT_FROM_EMAIL = os.getenv('DEFAULT_FROM_EMAIL', 'no-reply@g-match.org')
 SERVER_EMAIL = DEFAULT_FROM_EMAIL
 
 # Development: use console backend for testing
