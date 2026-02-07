@@ -6,7 +6,7 @@ from .models import CustomUser, Agreement
 @admin.register(CustomUser)
 class CustomUserAdmin(BaseUserAdmin):
     list_display = ['email', 'name', 'user_id', 'is_active', 'is_staff', 'date_joined']
-    list_filter = ['is_active', 'is_staff', 'gender', 'house']
+    list_filter = ['is_active', 'is_staff', 'gender']
     search_fields = ['email', 'name', 'student_id']
     ordering = ['-date_joined']
 
@@ -15,10 +15,10 @@ class CustomUserAdmin(BaseUserAdmin):
             'fields': ('email', 'password')
         }),
         ('Personal Info', {
-            'fields': ('name', 'student_id', 'phone_number', 'birth_year', 'gender', 'house')
+            'fields': ('name', 'student_id', 'phone_number', 'birth_year', 'gender')
         }),
         ('Privacy Settings', {
-            'fields': ('is_age_public', 'is_house_public')
+            'fields': ('is_age_public',)
         }),
         ('OAuth', {
             'fields': ('kakao_id', 'naver_id')

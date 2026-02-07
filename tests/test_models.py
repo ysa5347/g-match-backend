@@ -57,7 +57,6 @@ class CustomUserModelTest(TestCase):
         """기본 공개 범위 설정 테스트"""
         user = CustomUser.objects.create_user(**self.user_data)
         self.assertTrue(user.is_age_public)
-        self.assertTrue(user.is_house_public)
 
     def test_user_with_full_profile(self):
         """전체 프로필 정보를 가진 사용자 생성 테스트"""
@@ -67,7 +66,6 @@ class CustomUserModelTest(TestCase):
             'phone_number': '010-1234-5678',
             'birth_year': 2000,
             'gender': 'M',
-            'house': 'A동'
         }
         user = CustomUser.objects.create_user(**full_data)
 
@@ -75,7 +73,6 @@ class CustomUserModelTest(TestCase):
         self.assertEqual(user.phone_number, '010-1234-5678')
         self.assertEqual(user.birth_year, 2000)
         self.assertEqual(user.gender, 'M')
-        self.assertEqual(user.house, 'A동')
 
 
 class AgreementModelTest(TestCase):

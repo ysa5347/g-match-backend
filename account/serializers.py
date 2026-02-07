@@ -10,7 +10,7 @@ class UserInfoSerializer(serializers.ModelSerializer):
         model = CustomUser
         fields = [
             'user_id', 'email', 'name', 'student_id', 'phone_number',
-            'gender', 'house', 'nickname',
+            'gender', 'nickname',
             'is_oidc_user', 'date_joined'
         ]
         read_only_fields = [
@@ -29,7 +29,7 @@ class UserUpdateSerializer(serializers.ModelSerializer):
     class Meta:
         model = CustomUser
         fields = [
-            'gender', 'house', 'nickname'
+            'gender', 'nickname'
         ]
 
 
@@ -134,7 +134,7 @@ class UserRegistrationSerializer(serializers.ModelSerializer):
         model = CustomUser
         fields = [
             'email', 'password', 'password_confirm', 'name',
-            'student_id', 'phone_number', 'birth_year', 'gender', 'house'
+            'student_id', 'phone_number', 'birth_year', 'gender'
         ]
         extra_kwargs = {
             'password': {'write_only': True},

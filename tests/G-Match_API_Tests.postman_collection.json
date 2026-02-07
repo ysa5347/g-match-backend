@@ -260,7 +260,7 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"password\": \"testpass123!\",\n  \"password_confirm\": \"testpass123!\",\n  \"name\": \"테스트유저\",\n  \"student_id\": \"20241234\",\n  \"phone_number\": \"010-1234-5678\",\n  \"birth_year\": 2000,\n  \"gender\": \"M\",\n  \"house\": \"A동\"\n}"
+              "raw": "{\n  \"password\": \"testpass123!\",\n  \"password_confirm\": \"testpass123!\",\n  \"name\": \"테스트유저\",\n  \"student_id\": \"20241234\",\n  \"phone_number\": \"010-1234-5678\",\n  \"birth_year\": 2000,\n  \"gender\": \"M\"\n}"
             },
             "url": {
               "raw": "{{base_url}}/api/{{api_version}}/account/auth/registration/basic-info",
@@ -543,7 +543,7 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"name\": \"수정된이름\",\n  \"phone_number\": \"010-9999-9999\",\n  \"is_age_public\": false,\n  \"is_house_public\": true\n}"
+              "raw": "{\n  \"name\": \"수정된이름\",\n  \"phone_number\": \"010-9999-9999\",\n  \"is_age_public\": false\n}"
             },
             "url": {
               "raw": "{{base_url}}/api/{{api_version}}/account/info",

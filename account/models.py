@@ -46,7 +46,7 @@ class CustomUserManager(BaseUserManager):
                 - phone_number: 전화번호
             extra_data: dict containing additional user info:
                 - gender: 성별 (M/F) - 필수
-                - nickname: 닉네임 - 선택
+                - nickname: 닉네임 - 필수
 
         Returns:
             tuple: (user, created)
@@ -122,7 +122,7 @@ class CustomUser(AbstractBaseUser, PermissionsMixin):
     phone_number = models.CharField(max_length=20, blank=True, null=True)
 
     # Profile Information (managed by our service)
-    nickname = models.CharField(max_length=20, blank=True, null=True)
+    nickname = models.CharField(max_length=20, help_text='사용자 닉네임 (필수)')
 
     gender = models.CharField(
         max_length=1,
@@ -130,12 +130,14 @@ class CustomUser(AbstractBaseUser, PermissionsMixin):
         blank=True,
         null=True
     )
-    house = models.CharField(max_length=50, blank=True, null=True)
     # Django Required Fields
     is_active = models.BooleanField(default=True)
     is_staff = models.BooleanField(default=False)
     date_joined = models.DateTimeField(auto_now_add=True)
     last_login = models.DateTimeField(auto_now=True)
+
+    # Soft delete를 위한 비활성화 시각 (30일 후 하드 삭제)
+    deactivated_at = models.DateTimeField(null=True, blank=True)
 
     objects = CustomUserManager()
 
