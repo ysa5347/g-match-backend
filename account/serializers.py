@@ -23,9 +23,10 @@ class UserUpdateSerializer(serializers.ModelSerializer):
     """
     사용자 정보 수정용 Serializer
 
-    Note: email, name, student_id, phone_number는 GIST IdP에서 관리하므로
-    사용자가 직접 수정할 수 없습니다.
-    nickname은 필수 필드이므로 빈 값으로 수정할 수 없습니다.
+    Note:
+    - email, name, student_id, phone_number는 GIST IdP에서 관리하므로 수정 불가
+    - gender는 회원가입 시에만 설정 가능하며 이후 수정 불가
+    - nickname은 필수 필드이므로 빈 값으로 수정할 수 없습니다.
     """
     nickname = serializers.CharField(
         required=False,  # partial update 허용
@@ -38,7 +39,7 @@ class UserUpdateSerializer(serializers.ModelSerializer):
     class Meta:
         model = CustomUser
         fields = [
-            'gender', 'house', 'nickname'
+            'house', 'nickname'  # gender는 회원가입 후 수정 불가
         ]
 
     def validate_nickname(self, value):
