@@ -130,7 +130,6 @@ class CustomUser(AbstractBaseUser, PermissionsMixin):
         blank=True,
         null=True
     )
-    house = models.CharField(max_length=50, blank=True, null=True)
     # Django Required Fields
     is_active = models.BooleanField(default=True)
     is_staff = models.BooleanField(default=False)

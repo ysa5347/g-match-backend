@@ -460,6 +460,19 @@ def user_info_view(request):
         }, status=status.HTTP_200_OK)
 
     elif request.method in ['POST', 'PUT']:
+        # 닉네임 변경 시 match_status 확인
+        if 'nickname' in request.data:
+            from match.models import Property
+            active = Property.objects.filter(
+                user_id=user.user_id
+            ).order_by('-created_at').first()
+
+            if active and active.match_status != Property.MatchStatusChoice.NOT_STARTED:
+                return Response({
+                    'success': False,
+                    'error': '매칭 진행 중에는 닉네임을 변경할 수 없습니다.'
+                }, status=status.HTTP_400_BAD_REQUEST)
+
         serializer = UserUpdateSerializer(user, data=request.data, partial=True)
 
         if not serializer.is_valid():
@@ -469,6 +482,13 @@ def user_info_view(request):
             }, status=status.HTTP_400_BAD_REQUEST)
 
         serializer.save()
+
+        # 닉네임 변경 시 Property에도 전파
+        if 'nickname' in request.data:
+            from match.models import Property
+            Property.objects.filter(
+                user_id=user.user_id
+            ).update(nickname=user.nickname)
 
         return Response({
             'success': True,
