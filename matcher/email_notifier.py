@@ -1,17 +1,20 @@
 """
 Email Notifier for Matcher
 - 매칭 완료 시 양쪽 사용자에게 이메일 알림 발송
-- AWS SES를 통한 이메일 발송 (boto3)
+- SMTP를 통한 이메일 발송
 """
 import logging
+import smtplib
 import threading
-import boto3
-from botocore.exceptions import ClientError
+from email.mime.text import MIMEText
+from email.mime.multipart import MIMEMultipart
 
 from config import (
-    AWS_ACCESS_KEY_ID,
-    AWS_SECRET_ACCESS_KEY,
-    AWS_SES_REGION,
+    SMTP_HOST,
+    SMTP_PORT,
+    SMTP_USERNAME,
+    SMTP_PASSWORD,
+    SMTP_USE_TLS,
     DEFAULT_FROM_EMAIL,
     FRONTEND_URL,
     EMAIL_ENABLED,
@@ -24,18 +27,11 @@ class EmailNotifier:
     """매칭 알림 이메일 발송"""
 
     def __init__(self):
-        self.enabled = EMAIL_ENABLED and AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY
+        self.enabled = EMAIL_ENABLED and SMTP_HOST
         if self.enabled:
-            self.ses_client = boto3.client(
-                'ses',
-                region_name=AWS_SES_REGION,
-                aws_access_key_id=AWS_ACCESS_KEY_ID,
-                aws_secret_access_key=AWS_SECRET_ACCESS_KEY
-            )
-            logger.info("Email notifier initialized with AWS SES")
+            logger.info(f"Email notifier initialized with SMTP ({SMTP_HOST}:{SMTP_PORT})")
         else:
-            self.ses_client = None
-            logger.info("Email notifier disabled (EMAIL_ENABLED=false or missing AWS credentials)")
+            logger.info("Email notifier disabled (EMAIL_ENABLED=false or missing SMTP_HOST)")
 
     def notify_matched(
         self,
@@ -78,34 +74,38 @@ class EmailNotifier:
         html_body: str,
         text_body: str
     ) -> bool:
-        """AWS SES를 통해 이메일 발송"""
+        """SMTP를 통해 이메일 발송"""
         try:
-            response = self.ses_client.send_email(
-                Source=DEFAULT_FROM_EMAIL,
-                Destination={
-                    'ToAddresses': [recipient]
-                },
-                Message={
-                    'Subject': {
-                        'Data': subject,
-                        'Charset': 'UTF-8'
-                    },
-                    'Body': {
-                        'Text': {
-                            'Data': text_body,
-                            'Charset': 'UTF-8'
-                        },
-                        'Html': {
-                            'Data': html_body,
-                            'Charset': 'UTF-8'
-                        }
-                    }
-                }
-            )
-            logger.info(f"Email sent to {recipient}, MessageId: {response['MessageId']}")
+            # 멀티파트 메시지 생성
+            msg = MIMEMultipart('alternative')
+            msg['Subject'] = subject
+            msg['From'] = DEFAULT_FROM_EMAIL
+            msg['To'] = recipient
+
+            # 텍스트/HTML 파트 추가
+            part1 = MIMEText(text_body, 'plain', 'utf-8')
+            part2 = MIMEText(html_body, 'html', 'utf-8')
+            msg.attach(part1)
+            msg.attach(part2)
+
+            # SMTP 연결 및 발송
+            if SMTP_USE_TLS:
+                server = smtplib.SMTP(SMTP_HOST, SMTP_PORT, timeout=10)
+                server.starttls()
+            else:
+                server = smtplib.SMTP(SMTP_HOST, SMTP_PORT, timeout=10)
+
+            if SMTP_USERNAME and SMTP_PASSWORD:
+                server.login(SMTP_USERNAME, SMTP_PASSWORD)
+
+            server.sendmail(DEFAULT_FROM_EMAIL, [recipient], msg.as_string())
+            server.quit()
+
+            logger.info(f"Email sent to {recipient}")
             return True
-        except ClientError as e:
-            logger.error(f"Failed to send email to {recipient}: {e.response['Error']['Message']}")
+
+        except smtplib.SMTPException as e:
+            logger.error(f"SMTP error sending email to {recipient}: {e}")
             return False
         except Exception as e:
             logger.error(f"Unexpected error sending email to {recipient}: {e}")

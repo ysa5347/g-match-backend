@@ -18,10 +18,6 @@ sqlparse==0.5.5
 uritemplate==4.2.0
 gunicorn==25.0.1
 
-# AWS SES Email Backend
-django-ses==4.3.0
-boto3==1.35.96
-
 # OIDC Authentication
 PyJWT==2.8.0
 cryptography==41.0.7
