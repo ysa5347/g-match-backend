@@ -41,6 +41,10 @@ class MatchEmailService:
             'subject': '[G-Match] 상대방이 재매칭을 요청했습니다',
             'template': 'match/email/partner_rematched.html',
         },
+        'expired': {
+            'subject': '[G-Match] 매칭 대기가 만료되었습니다',
+            'template': 'match/email/expired.html',
+        },
     }
 
     @staticmethod
@@ -188,6 +192,12 @@ class MatchEmailService:
                 f"새로운 룸메이트를 찾으시려면 재매칭을 요청해주세요.\n\n"
                 f"재매칭하기: {match_url}"
             ),
+            'expired': (
+                f"안녕하세요, {user_name}님!\n\n"
+                f"매칭 대기 시간이 만료되어 대기열에서 제외되었습니다.\n"
+                f"새로운 룸메이트를 찾으시려면 다시 매칭을 시작해주세요.\n\n"
+                f"매칭 시작하기: {match_url}"
+            ),
         }
 
         plain = messages.get(event, f"G-Match 알림이 있습니다. {match_url}")
@@ -226,3 +236,8 @@ class MatchEmailService:
     def notify_partner_rematched(cls, user_id):
         """상대방 재매칭 알림 (status 6)"""
         return cls.send_notification('partner_rematched', user_id)
+
+    @classmethod
+    def notify_expired(cls, user_id):
+        """매칭 대기 만료 알림 (status 9)"""
+        return cls.send_notification('expired', user_id)

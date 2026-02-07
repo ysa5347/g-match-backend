@@ -269,7 +269,7 @@ EXPIRE_HOURS = 24
 def remove_expired_users(r: redis.Redis, conn):
     """registered_at으로부터 24시간 초과된 유저를 user-queue에서 제거하고 match_status=9로 변경"""
     now = datetime.now(timezone.utc)
-    expired_property_ids = []
+    expired_users = []  # (user_id, property_id) 튜플 리스트
     removed_count = 0
 
     for key in r.keys(USER_QUEUE_PATTERN):
@@ -284,14 +284,18 @@ def remove_expired_users(r: redis.Redis, conn):
 
         registered_at = datetime.fromisoformat(registered_at_str)
         if now - registered_at > timedelta(hours=EXPIRE_HOURS):
+            user_id = user_data.get('user_id')
             property_id = user_data.get('property_id')
-            if property_id:
-                expired_property_ids.append(property_id)
+            if user_id and property_id:
+                expired_users.append((user_id, property_id))
             r.delete(key)
             removed_count += 1
-            logger.info(f"Expired user removed: {user_data.get('user_id')} (registered_at: {registered_at_str})")
+            logger.info(f"Expired user removed: {user_id} (registered_at: {registered_at_str})")
 
-    if expired_property_ids:
+    if expired_users:
+        expired_property_ids = [p[1] for p in expired_users]
+        expired_user_ids = [u[0] for u in expired_users]
+
         cursor = conn.cursor()
         try:
             placeholders = ','.join(['%s'] * len(expired_property_ids))
@@ -301,6 +305,10 @@ def remove_expired_users(r: redis.Redis, conn):
             )
             conn.commit()
             logger.info(f"Updated match_status=9 for {cursor.rowcount} expired properties")
+
+            # 만료된 유저들에게 이메일 알림 발송
+            _send_expired_notifications(conn, cursor, expired_user_ids)
+
         except Exception as e:
             logger.error(f"Failed to update match_status for expired users: {e}")
             conn.rollback()
@@ -309,6 +317,34 @@ def remove_expired_users(r: redis.Redis, conn):
 
     if removed_count > 0:
         logger.info(f"Removed {removed_count} expired user(s) from queue")
+
+
+def _send_expired_notifications(conn, cursor, expired_user_ids: list):
+    """만료된 사용자들에게 이메일 알림 발송"""
+    notifier = get_notifier()
+    if not notifier.enabled:
+        return
+
+    try:
+        placeholders = ','.join(['%s'] * len(expired_user_ids))
+        cursor.execute(
+            f"SELECT user_id, email, nickname, name FROM account_customuser WHERE user_id IN ({placeholders})",
+            expired_user_ids
+        )
+        users = cursor.fetchall()
+
+        for user in users:
+            user_id, email, nickname, name = user
+            if email:
+                user_name = nickname or name or '사용자'
+                notifier.notify_expired(
+                    user_email=email,
+                    user_name=user_name
+                )
+                logger.info(f"Sent expired notification to {email}")
+
+    except Exception as e:
+        logger.error(f"Failed to send expired notifications: {e}")
 
 
 # == 7. 남은 유저 aging ======================================

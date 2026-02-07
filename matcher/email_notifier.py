@@ -199,6 +199,89 @@ G-Match에서 회원님과 잘 맞을 것 같은 룸메이트 후보를 찾았�
 이 메일은 G-Match 서비스에서 자동으로 발송되었습니다.
 """
 
+    def notify_expired(
+        self,
+        user_email: str,
+        user_name: str,
+        async_send: bool = True
+    ) -> bool:
+        """매칭 대기 만료 알림 발송"""
+        if not self.enabled:
+            logger.debug(f"Email disabled, skipping expired notification to {user_email}")
+            return False
+
+        subject = "[G-Match] 매칭 대기가 만료되었습니다"
+        match_url = f"{FRONTEND_URL}/match"
+
+        html_body = self._generate_expired_html(user_name, match_url)
+        text_body = self._generate_expired_text(user_name, match_url)
+
+        if async_send:
+            thread = threading.Thread(
+                target=self._send_email,
+                args=(user_email, subject, html_body, text_body)
+            )
+            thread.start()
+            return True
+        else:
+            return self._send_email(user_email, subject, html_body, text_body)
+
+    def _generate_expired_html(self, user_name: str, match_url: str) -> str:
+        """매칭 대기 만료 HTML 본문 생성"""
+        return f'''
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+</head>
+<body style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Arial, sans-serif; line-height: 1.6; color: #333; max-width: 600px; margin: 0 auto; padding: 20px; background-color: #f5f5f5;">
+    <div style="background-color: #ffffff; border-radius: 8px; padding: 32px; box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);">
+        <div style="text-align: center; margin-bottom: 24px; padding-bottom: 24px; border-bottom: 1px solid #eee;">
+            <div style="font-size: 28px; font-weight: bold; color: #6366f1;">G-Match</div>
+            <p style="color: #6b7280; margin: 8px 0 0 0; font-size: 14px;">GIST 룸메이트 매칭 서비스</p>
+        </div>
+
+        <div style="margin-bottom: 24px;">
+            <h1 style="color: #1f2937; font-size: 22px; margin-bottom: 16px;">매칭 대기 만료 안내</h1>
+            <p style="margin-bottom: 12px; color: #4b5563;">안녕하세요, <span style="color: #6366f1; font-weight: 600;">{user_name}</span>님.</p>
+            <p style="margin-bottom: 12px; color: #4b5563;">매칭 대기 시간(24시간)이 만료되어 대기열에서 제외되었습니다.</p>
+            <div style="background-color: #f3f4f6; border-radius: 8px; padding: 16px; margin: 16px 0;">
+                <p style="margin: 0 0 8px 0; color: #4b5563;">아쉽게도 대기 시간 내에 적합한 룸메이트를 찾지 못했습니다.</p>
+                <p style="margin: 0; color: #4b5563;">새로운 룸메이트를 찾으시려면 다시 매칭을 시작해주세요.</p>
+            </div>
+            <div style="text-align: center;">
+                <a href="{match_url}" style="display: inline-block; background-color: #6366f1; color: #ffffff !important; text-decoration: none; padding: 14px 28px; border-radius: 8px; font-weight: 600; margin: 16px 0;">다시 매칭 시작하기</a>
+            </div>
+            <p style="font-size: 14px; color: #6b7280;">더 좋은 룸메이트를 만나실 수 있도록 G-Match가 도와드리겠습니다.</p>
+        </div>
+
+        <div style="text-align: center; padding-top: 24px; border-top: 1px solid #eee; font-size: 12px; color: #9ca3af;">
+            <p>이 메일은 G-Match 서비스에서 자동으로 발송되었습니다.</p>
+            <p>&copy; 2025 G-Match. All rights reserved.</p>
+        </div>
+    </div>
+</body>
+</html>
+'''
+
+    def _generate_expired_text(self, user_name: str, match_url: str) -> str:
+        """매칭 대기 만료 텍스트 본문 생성"""
+        return f"""안녕하세요, {user_name}님.
+
+매칭 대기 시간(24시간)이 만료되어 대기열에서 제외되었습니다.
+
+아쉽게도 대기 시간 내에 적합한 룸메이트를 찾지 못했습니다.
+새로운 룸메이트를 찾으시려면 다시 매칭을 시작해주세요.
+
+다시 매칭 시작하기: {match_url}
+
+더 좋은 룸메이트를 만나실 수 있도록 G-Match가 도와드리겠습니다.
+
+---
+이 메일은 G-Match 서비스에서 자동으로 발송되었습니다.
+"""
+
 
 # 싱글톤 인스턴스
 _notifier = None
