@@ -114,7 +114,7 @@ class MatchingService:
 
     # ==================== 상태 조회 ====================
     def get_status(self, user_id: int) -> dict:
-        property_obj = Property.objects.filter(user_id=user_id).last()
+        property_obj = Property.objects.filter(user_id=user_id).first()
 
         if not property_obj:
             return {"success": False, "error": "profile_not_found", "message": "프로필을 먼저 작성해주세요."}
@@ -141,8 +141,8 @@ class MatchingService:
 
     # ==================== 대기열 등록 ====================
     def start_matching(self, user_id: int) -> dict:
-        property_obj = Property.objects.filter(user_id=user_id).last()
-        survey_obj = Survey.objects.filter(user_id=user_id).last()
+        property_obj = Property.objects.filter(user_id=user_id).first()
+        survey_obj = Survey.objects.filter(user_id=user_id).first()
         print("phase 1")
         if not property_obj or not survey_obj:
             return {
@@ -170,7 +170,7 @@ class MatchingService:
     # status 2: 거절
     # status 3: 수락 후 대기 중 취소
     def cancel_matching(self, user_id: int) -> dict:
-        property_obj = Property.objects.filter(user_id=user_id).last()
+        property_obj = Property.objects.filter(user_id=user_id).first()
 
         if not property_obj:
             return {
@@ -233,8 +233,8 @@ class MatchingService:
             user_a_id = match_history.user_a_id
             user_b_id = match_history.user_b_id
 
-            prop_a = Property.objects.select_for_update().filter(user_id=user_a_id).last()
-            prop_b = Property.objects.select_for_update().filter(user_id=user_b_id).last()
+            prop_a = Property.objects.select_for_update().filter(user_id=user_a_id).first()
+            prop_b = Property.objects.select_for_update().filter(user_id=user_b_id).first()
 
             is_user_a = str(user_id) == str(user_a_id)
             my_prop = prop_a if is_user_a else prop_b
@@ -283,7 +283,7 @@ class MatchingService:
 
     # ==================== 매칭 결과 조회 ====================
     def get_result(self, user_id: int) -> dict:
-        property_obj = Property.objects.filter(user_id=user_id).last()
+        property_obj = Property.objects.filter(user_id=user_id).first()
 
         if not property_obj:
             return {
@@ -365,8 +365,8 @@ class MatchingService:
             user_a_id = match_history.user_a_id
             user_b_id = match_history.user_b_id
 
-            prop_a = Property.objects.select_for_update().filter(user_id=user_a_id).last()
-            prop_b = Property.objects.select_for_update().filter(user_id=user_b_id).last()
+            prop_a = Property.objects.select_for_update().filter(user_id=user_a_id).first()
+            prop_b = Property.objects.select_for_update().filter(user_id=user_b_id).first()
 
             is_user_a = str(user_id) == str(user_a_id)
             my_prop = prop_a if is_user_a else prop_b
@@ -429,7 +429,7 @@ class MatchingService:
 
     # ==================== 연락처 조회 ====================
     def get_contact(self, user_id: int) -> dict:
-        property_obj = Property.objects.filter(user_id=user_id).last()
+        property_obj = Property.objects.filter(user_id=user_id).first()
 
         if not property_obj:
             return {
@@ -472,7 +472,7 @@ class MatchingService:
             }
 
         # 상대방의 Property 정보 가져오기
-        partner_property = Property.objects.filter(user_id=partner_id).last()
+        partner_property = Property.objects.filter(user_id=partner_id).first()
         if not partner_property:
             return {
                 "success": False,
@@ -496,7 +496,7 @@ class MatchingService:
     # ==================== 재매칭 ====================
     def rematch(self, user_id: int) -> dict:
         # 현재 상태 확인 (락 없이)
-        property_obj = Property.objects.filter(user_id=user_id).last()
+        property_obj = Property.objects.filter(user_id=user_id).first()
 
         if not property_obj:
             return {
@@ -547,8 +547,8 @@ class MatchingService:
             user_a_id = match_history.user_a_id
             user_b_id = match_history.user_b_id
 
-            prop_a = Property.objects.select_for_update().filter(user_id=user_a_id).last()
-            prop_b = Property.objects.select_for_update().filter(user_id=user_b_id).last()
+            prop_a = Property.objects.select_for_update().filter(user_id=user_a_id).first()
+            prop_b = Property.objects.select_for_update().filter(user_id=user_b_id).first()
 
             is_user_a = str(user_id) == str(user_a_id)
             my_prop = prop_a if is_user_a else prop_b
