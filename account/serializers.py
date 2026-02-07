@@ -25,12 +25,29 @@ class UserUpdateSerializer(serializers.ModelSerializer):
 
     Note: email, name, student_id, phone_number는 GIST IdP에서 관리하므로
     사용자가 직접 수정할 수 없습니다.
+    nickname은 필수 필드이므로 빈 값으로 수정할 수 없습니다.
     """
+    nickname = serializers.CharField(
+        required=False,  # partial update 허용
+        max_length=20,
+        min_length=2,
+        allow_blank=False,
+        help_text='닉네임 (2~20자)'
+    )
+
     class Meta:
         model = CustomUser
         fields = [
             'gender', 'house', 'nickname'
         ]
+
+    def validate_nickname(self, value):
+        """닉네임 유효성 검사 - 빈 값 불허"""
+        if value is not None:
+            value = value.strip()
+            if not value:
+                raise serializers.ValidationError('닉네임은 빈 값으로 수정할 수 없습니다.')
+        return value
 
 
 class AgreementSerializer(serializers.ModelSerializer):
@@ -58,7 +75,7 @@ class BasicInfoSerializer(serializers.Serializer):
 
     GIST IdP에서 제공하지 않는 추가 정보를 입력받습니다.
     - gender: 필수
-    - nickname: 선택
+    - nickname: 필수
     """
     gender = serializers.ChoiceField(
         required=True,
@@ -66,12 +83,17 @@ class BasicInfoSerializer(serializers.Serializer):
         help_text='성별 (M: 남성, F: 여성) - 필수'
     )
     nickname = serializers.CharField(
-        required=False,
+        required=True,
         max_length=20,
-        allow_null=True,
-        allow_blank=True,
-        help_text='닉네임 (최대 20자) - 선택'
+        min_length=2,
+        help_text='닉네임 (2~20자) - 필수'
     )
+
+    def validate_nickname(self, value):
+        """닉네임 유효성 검사"""
+        if not value or not value.strip():
+            raise serializers.ValidationError('닉네임은 필수 입력 항목입니다.')
+        return value.strip()
 
 
 class OIDCUserInfoSerializer(serializers.Serializer):
