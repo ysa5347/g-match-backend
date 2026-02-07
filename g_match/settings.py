@@ -48,7 +48,7 @@ INSTALLED_APPS = [
     'match',
 ]
 
-CSRF_ENABLED = os.getenv('CSRF_ENABLED', 'True').lower() in ('true', '1', 'yes')
+CSRF_ENABLED = os.getenv('CSRF_ENABLED', 'False').lower() in ('true', '1', 'yes')
 
 MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',
@@ -133,6 +133,7 @@ USE_TZ = True
 # https://docs.djangoproject.com/en/5.2/howto/static-files/
 
 STATIC_URL = 'static/'
+STATIC_ROOT = os.getenv('STATIC_ROOT', BASE_DIR / 'staticfiles')
 
 # Default primary key field type
 # https://docs.djangoproject.com/en/5.2/ref/settings/#default-auto-field
@@ -161,7 +162,6 @@ CORS_ALLOW_HEADERS = [
     'dnt',
     'origin',
     'user-agent',
-    'x-csrftoken',
     'x-requested-with',
     'x-registration-token',  # 회원가입 토큰 헤더
     'x-recovery-token',  # 복구 토큰 헤더
