@@ -122,7 +122,7 @@ class CustomUser(AbstractBaseUser, PermissionsMixin):
     phone_number = models.CharField(max_length=20, blank=True, null=True)
 
     # Profile Information (managed by our service)
-    nickname = models.CharField(max_length=20, blank=True, null=True)
+    nickname = models.CharField(max_length=20, help_text='사용자 닉네임 (필수)')
 
     gender = models.CharField(
         max_length=1,
