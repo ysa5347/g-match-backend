@@ -66,7 +66,9 @@ ROOT_URLCONF = 'g_match.urls'
 TEMPLATES = [
     {
         'BACKEND': 'django.template.backends.django.DjangoTemplates',
-        'DIRS': [],
+        'DIRS': [
+            BASE_DIR / 'match' / 'templates',  # 이메일 템플릿 디렉토리
+        ],
         'APP_DIRS': True,
         'OPTIONS': {
             'context_processors': [
