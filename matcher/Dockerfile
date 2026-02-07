@@ -12,6 +12,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY config.py .
 COPY edge_calculator.py .
 COPY match_scheduler.py .
+COPY email_notifier.py .
 
 # Create non-root user
 RUN useradd -m -u 1000 appuser && \
